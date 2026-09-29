@@ -453,3 +453,6 @@ public final class PeerLink {
         onStateChange = nil
     }
 }
+
+// All mutable state is confined to the transport's serial queue.
+extension PeerLink: @unchecked Sendable {}

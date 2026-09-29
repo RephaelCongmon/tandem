@@ -187,3 +187,6 @@ public final class NetworkTransport: ByteTransport {
         }
     }
 }
+
+// All mutable state is confined to `queue`.
+extension NetworkTransport: @unchecked Sendable {}

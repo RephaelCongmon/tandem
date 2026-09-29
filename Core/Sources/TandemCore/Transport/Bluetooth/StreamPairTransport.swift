@@ -496,3 +496,6 @@ final class StreamIOThread: @unchecked Sendable {
         CFRunLoopWakeUp(runLoop)
     }
 }
+
+// All public state is confined to `queue`; stream IO runs on the shared IO thread.
+extension StreamPairTransport: @unchecked Sendable {}

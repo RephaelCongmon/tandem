@@ -294,3 +294,7 @@ public final class NetworkBrowser {
         return output
     }
 }
+
+// Queue-confined; safe to hand across isolation domains.
+extension NetworkListener: @unchecked Sendable {}
+extension NetworkBrowser: @unchecked Sendable {}

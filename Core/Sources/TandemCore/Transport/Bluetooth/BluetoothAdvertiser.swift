@@ -300,3 +300,6 @@ public final class BluetoothAdvertiser: NSObject, CBPeripheralManagerDelegate {
         handler(transport)
     }
 }
+
+// Queue-confined (CoreBluetooth delegate queue).
+extension BluetoothAdvertiser: @unchecked Sendable {}

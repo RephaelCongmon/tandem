@@ -1,0 +1,81 @@
+name: Tandem
+options:
+  bundleIdPrefix: com.rofel
+  deploymentTarget:
+    macOS: "14.0"
+  createIntermediateGroups: true
+  developmentLanguage: en
+packages:
+  TandemCore:
+    path: ../Core
+targets:
+  Tandem:
+    type: application
+    platform: macOS
+    sources:
+      - path: Sources
+      - path: Resources
+    dependencies:
+      - package: TandemCore
+        product: TandemCore
+      - package: TandemCore
+        product: TandemUI
+      - sdk: ScreenCaptureKit.framework
+      - sdk: AVFoundation.framework
+      - sdk: ServiceManagement.framework
+    info:
+      path: Info.plist
+      properties:
+        CFBundleDisplayName: Tandem
+        CFBundleShortVersionString: $(MARKETING_VERSION)
+        CFBundleVersion: $(CURRENT_PROJECT_VERSION)
+        LSApplicationCategoryType: public.app-category.productivity
+        LSMinimumSystemVersion: $(MACOSX_DEPLOYMENT_TARGET)
+        NSHumanReadableCopyright: "© 2026 Tandem"
+        NSPrincipalClass: NSApplication
+        NSLocalNetworkUsageDescription: "Tandem finds your other Mac on the local network, over peer-to-peer Wi-Fi, or through a cable so the two can share the screen securely."
+        NSBonjourServices:
+          - _tandem._tcp
+        NSBluetoothAlwaysUsageDescription: "Tandem uses Bluetooth to reach your other Mac when there's no shared network."
+        NSCameraUsageDescription: "Tandem can share this Mac's camera with your other Mac when you choose the camera as the source."
+        NSScreenCaptureUsageDescription: "Tandem shares this Mac's screen with the other Mac you paired, only while sharing is on."
+    entitlements:
+      path: Tandem.entitlements
+      properties:
+        com.apple.security.app-sandbox: true
+        com.apple.security.network.client: true
+        com.apple.security.network.server: true
+        com.apple.security.device.bluetooth: true
+        com.apple.security.device.camera: true
+        com.apple.security.files.user-selected.read-write: true
+    settings:
+      base:
+        PRODUCT_BUNDLE_IDENTIFIER: com.rofel.tandem
+        PRODUCT_NAME: Tandem
+        DEVELOPMENT_TEAM: 2TJNTBA58V
+        CODE_SIGN_STYLE: Automatic
+        CODE_SIGN_IDENTITY: "Apple Development"
+        ENABLE_HARDENED_RUNTIME: YES
+        GENERATE_INFOPLIST_FILE: NO
+        MARKETING_VERSION: "1.0.0"
+        CURRENT_PROJECT_VERSION: "1"
+        SWIFT_VERSION: "5.0"
+        MACOSX_DEPLOYMENT_TARGET: "14.0"
+        ASSETCATALOG_COMPILER_APPICON_NAME: AppIcon
+        ASSETCATALOG_COMPILER_GLOBAL_ACCENT_COLOR_NAME: AccentColor
+        ENABLE_USER_SCRIPT_SANDBOXING: YES
+        DEAD_CODE_STRIPPING: YES
+        SWIFT_EMIT_LOC_STRINGS: NO
+      configs:
+        Release:
+          SWIFT_COMPILATION_MODE: wholemodule
+          SWIFT_OPTIMIZATION_LEVEL: "-O"
+schemes:
+  Tandem:
+    build:
+      targets:
+        Tandem: all
+    run:
+      config: Debug
+    archive:
+      config: Release

@@ -693,3 +693,6 @@ private final class ConnectAttempt {
         self.completion = completion
     }
 }
+
+// Queue-confined (CoreBluetooth delegate queue).
+extension BluetoothBrowser: @unchecked Sendable {}
