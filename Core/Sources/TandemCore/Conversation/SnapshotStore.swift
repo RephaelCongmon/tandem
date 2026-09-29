@@ -14,6 +14,8 @@ public final class SnapshotStore: @unchecked Sendable {
     private let lock = NSLock()
     private var entries: [UUID: Entry] = [:]
     private var variants: [String: AIImage] = [:]
+    private var variantOrder: [String] = []
+    private let maxVariants = 48
     private var memoryBytes = 0
     private var accessCounter: UInt64 = 0
     private let directory: URL?
@@ -108,7 +110,11 @@ public final class SnapshotStore: @unchecked Sendable {
             result = AIImage(data: encoded.data, mimeType: "image/jpeg", width: encoded.width, height: encoded.height)
         }
         lock.lock()
+        if variants[key] == nil { variantOrder.append(key) }
         variants[key] = result
+        while variantOrder.count > maxVariants {
+            variants[variantOrder.removeFirst()] = nil
+        }
         lock.unlock()
         return result
     }
@@ -128,6 +134,7 @@ public final class SnapshotStore: @unchecked Sendable {
         lock.lock()
         entries.removeAll()
         variants.removeAll()
+        variantOrder.removeAll()
         memoryBytes = 0
         lock.unlock()
         if let directory { removeAllFiles(in: directory) }
@@ -138,6 +145,7 @@ public final class SnapshotStore: @unchecked Sendable {
     private func invalidateVariants(for id: UUID) {
         let prefix = id.uuidString
         variants = variants.filter { !$0.key.hasPrefix(prefix) }
+        variantOrder.removeAll { $0.hasPrefix(prefix) }
     }
 
     /// Must be called with the lock held.
