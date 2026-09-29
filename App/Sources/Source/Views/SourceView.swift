@@ -296,7 +296,7 @@ private struct ViewerRow: View {
 
     var body: some View {
         HStack(spacing: 10) {
-            DeviceIcon(model: viewer.connection.peer?.model ?? "Mac", size: 32, tint: viewer.isWatching ? Theme.live : Theme.accent)
+            DeviceIcon(model: viewer.connection.peer?.model ?? "Mac", size: 32, tint: viewer.isWatching && model.source.isActive ? Theme.live : Theme.accent)
             VStack(alignment: .leading, spacing: 3) {
                 Text(viewer.name).font(.system(size: 13, weight: .semibold)).lineLimit(1)
                 HStack(spacing: 6) {
@@ -304,9 +304,10 @@ private struct ViewerRow: View {
                     if let rtt = viewer.connection.stats.rttMillis {
                         StatChip(systemImage: "timer", value: "\(Int(rtt.rounded())) ms")
                     }
-                    Text(viewer.approved ? (viewer.isWatching ? "Watching" : "Idle") : "Awaiting approval")
+                    let watching = viewer.isWatching && model.source.isActive
+                    Text(!viewer.approved ? "Awaiting approval" : (!model.source.isActive ? "Paused" : (watching ? "Watching" : "Idle")))
                         .font(TandemFont.caption)
-                        .foregroundStyle(viewer.isWatching ? Theme.live : Theme.textSecondary)
+                        .foregroundStyle(watching ? Theme.live : Theme.textSecondary)
                 }
             }
             Spacer()
