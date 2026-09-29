@@ -267,9 +267,10 @@ final class VideoFanout: @unchecked Sendable {
             viewer.inflight.append((seq, now))
             framesSentWindow += 1
             let link = viewer.link
+            let format = formatToSend
             link.queue.async {
                 // Format rides the video queue so it stays ordered with frames.
-                if let formatToSend { link.send(.videoFormat(formatToSend), priority: .video) }
+                if let format { link.send(.videoFormat(format), priority: .video) }
                 link.send(.videoFrame(frame), priority: .video)
             }
         }

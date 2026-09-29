@@ -12,7 +12,7 @@ struct SourceView: View {
             Hairline(vertical: true)
             ScrollView {
                 VStack(alignment: .leading, spacing: Spacing.l) {
-                    if !model.source.hasScreenPermission && model.source.selectedSource?.kind != .camera {
+                    if !model.source.hasScreenPermission && CaptureService.requiresScreenPermission(model.source.selectedSource) {
                         PermissionCard()
                     }
                     ViewersCard()

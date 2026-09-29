@@ -6,6 +6,12 @@ public struct ReceivedSnapshot: Sendable, Hashable {
     public var data: Data
     /// Seconds between the header and the last chunk arriving.
     public var transferSeconds: Double
+
+    public init(header: SnapshotHeader, data: Data, transferSeconds: Double) {
+        self.header = header
+        self.data = data
+        self.transferSeconds = transferSeconds
+    }
 }
 
 /// Reassembles chunked snapshots on the receiving side. Tolerates interleaving of

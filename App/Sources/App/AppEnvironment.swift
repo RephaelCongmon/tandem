@@ -53,6 +53,15 @@ enum AppEnvironment {
         #endif
     }
 
+    /// Development-only: the Studio pairs with the first Source it discovers.
+    static var autoPair: Bool {
+        #if DEBUG
+        return UserDefaults.standard.bool(forKey: "TandemAutoPair")
+        #else
+        return false
+        #endif
+    }
+
     /// Development-only: override the AI base URL (e.g. a local mock server).
     static var debugAIBaseURL: URL? {
         #if DEBUG

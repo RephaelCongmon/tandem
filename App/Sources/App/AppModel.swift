@@ -36,7 +36,8 @@ final class AppModel {
         keys = APIKeyStore(servicePrefix: AppEnvironment.keychainPrefix)
         let keyStore = KeychainPairingKeyStore(service: "\(AppEnvironment.keychainPrefix).pairing")
         trust = TrustedPeerStore(keyStore: keyStore, defaults: defaults)
-        identity = DeviceIdentity.loadOrCreate(defaults: defaults, customName: settings.deviceName)
+        let identity = DeviceIdentity.loadOrCreate(defaults: defaults, customName: settings.deviceName)
+        self.identity = identity
         connections = ConnectionManager(settings: settings, trust: trust, identity: identity)
         source = SourceEngine(settings: settings)
         studio = StudioEngine(settings: settings, keys: keys)
@@ -61,6 +62,11 @@ final class AppModel {
     }
 
     func start() {
+        #if DEBUG
+        let arguments = UserDefaults.standard
+        if let raw = arguments.string(forKey: "TandemRole"), let role = AppRole(rawValue: raw) { settings.role = role }
+        if arguments.bool(forKey: "TandemTestPattern") { settings.captureSource = TestPatternGenerator.sourceID }
+        #endif
         applyAppearance()
         if let role = settings.role { activate(role) }
     }

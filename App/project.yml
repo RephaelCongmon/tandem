@@ -36,6 +36,8 @@ targets:
         NSLocalNetworkUsageDescription: "Tandem finds your other Mac on the local network, over peer-to-peer Wi-Fi, or through a cable so the two can share the screen securely."
         NSBonjourServices:
           - _tandem._tcp
+        NSAppTransportSecurity:
+          NSAllowsLocalNetworking: true
         NSBluetoothAlwaysUsageDescription: "Tandem uses Bluetooth to reach your other Mac when there's no shared network."
         NSCameraUsageDescription: "Tandem can share this Mac's camera with your other Mac when you choose the camera as the source."
         NSScreenCaptureUsageDescription: "Tandem shares this Mac's screen with the other Mac you paired, only while sharing is on."

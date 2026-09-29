@@ -3,7 +3,7 @@ import Foundation
 import Network
 import Observation
 import os
-import TandemCore
+@preconcurrency import TandemCore
 
 /// A Mac seen nearby (over the network and/or Bluetooth) or remembered from pairing.
 struct NearbyDevice: Identifiable, Hashable {
@@ -60,8 +60,8 @@ final class ConnectionManager {
     @ObservationIgnored private let settings: SettingsStore
     @ObservationIgnored private let trust: TrustedPeerStore
     @ObservationIgnored private(set) var identity: DeviceIdentity
-    @ObservationIgnored private var listener: NetworkListener?
-    @ObservationIgnored private var browser: NetworkBrowser?
+    @ObservationIgnored private var listener: BonjourListener?
+    @ObservationIgnored private var browser: BonjourBrowser?
     @ObservationIgnored private var advertiser: BluetoothAdvertiser?
     @ObservationIgnored private var bluetoothBrowser: BluetoothBrowser?
     @ObservationIgnored private let discoveryQueue = DispatchQueue(label: "tandem.discovery", qos: .userInitiated)
@@ -265,7 +265,7 @@ final class ConnectionManager {
     // MARK: Listening (Source)
 
     private func startListening() {
-        let listener = NetworkListener(identity: identity, role: .source, queue: discoveryQueue)
+        let listener = BonjourListener(identity: identity, role: .source, queue: discoveryQueue)
         listener.onStateChange = { [weak self] state in onMain { self?.listenerState = state } }
         listener.onIncomingTransport = { [weak self] transport in
             onMain { self?.acceptIncoming(transport) }
@@ -310,7 +310,7 @@ final class ConnectionManager {
     // MARK: Browsing (Studio)
 
     private func startBrowsing() {
-        let browser = NetworkBrowser(ownDeviceID: identity.id, queue: discoveryQueue)
+        let browser = BonjourBrowser(ownDeviceID: identity.id, queue: discoveryQueue)
         browser.onStateChange = { [weak self] state in onMain { self?.browserState = state } }
         browser.onChange = { [weak self] discoveries in
             onMain { self?.updateNetworkDiscoveries(discoveries) }
@@ -342,6 +342,9 @@ final class ConnectionManager {
         }
         networkDiscoveries = byID
         rebuildNearby()
+        if AppEnvironment.autoPair, desiredSourceID == nil, connections.isEmpty, let first = byID.keys.sorted().first {
+            connect(to: first)
+        }
         maybeAutoConnect()
     }
 

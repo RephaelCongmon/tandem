@@ -21,7 +21,7 @@ public enum ListenerState: Sendable, Equatable {
 
 /// Accepts incoming TCP connections and advertises this Mac over Bonjour on every
 /// interface, including peer-to-peer Wi-Fi.
-public final class NetworkListener {
+public final class BonjourListener {
     public var onIncomingTransport: ((NetworkTransport) -> Void)?
     public var onStateChange: ((ListenerState) -> Void)?
 
@@ -197,7 +197,7 @@ public enum BrowserState: Sendable, Equatable {
 }
 
 /// Browses for other Tandem instances (Wi-Fi, Ethernet, Thunderbolt, peer-to-peer Wi-Fi).
-public final class NetworkBrowser {
+public final class BonjourBrowser {
     public var onChange: (([NetworkDiscovery]) -> Void)?
     public var onStateChange: ((BrowserState) -> Void)?
 
@@ -296,5 +296,5 @@ public final class NetworkBrowser {
 }
 
 // Queue-confined; safe to hand across isolation domains.
-extension NetworkListener: @unchecked Sendable {}
-extension NetworkBrowser: @unchecked Sendable {}
+extension BonjourListener: @unchecked Sendable {}
+extension BonjourBrowser: @unchecked Sendable {}

@@ -52,12 +52,27 @@ final class CaptureService: NSObject, @unchecked Sendable {
     private var config: CaptureConfig?
     private var camera: CameraCapture?
     private var lastCameraFrame: CVPixelBuffer?
+    #if DEBUG
+    private var testPattern: TestPatternGenerator?
+    #endif
     private let log = Logger(subsystem: "com.rofel.tandem", category: "Capture")
 
     var isRunning: Bool {
         lock.lock()
         defer { lock.unlock() }
+        #if DEBUG
+        if testPattern != nil { return true }
+        #endif
         return stream != nil || camera != nil
+    }
+
+    /// Whether capturing `source` needs Screen Recording permission.
+    static func requiresScreenPermission(_ source: CaptureSourceID?) -> Bool {
+        guard let source else { return true }
+        #if DEBUG
+        if source == TestPatternGenerator.sourceID { return false }
+        #endif
+        return source.kind != .camera
     }
 
     // MARK: Permissions
@@ -129,6 +144,9 @@ final class CaptureService: NSObject, @unchecked Sendable {
             throw error
         }
         result.append(contentsOf: CameraCapture.availableCameras())
+        #if DEBUG
+        result.append(TestPatternGenerator.descriptor)
+        #endif
         return result
     }
 
@@ -137,6 +155,21 @@ final class CaptureService: NSObject, @unchecked Sendable {
     /// Starts (or restarts) capturing `source`.
     func start(source: CaptureSourceID, config: CaptureConfig, excludeOwnApp: Bool) async throws -> CaptureSourceDescriptor {
         await stop()
+        #if DEBUG
+        if source == TestPatternGenerator.sourceID {
+            let generator = TestPatternGenerator(queue: outputQueue, maxDimension: config.maxDimension) { [weak self] sample, pixel, captured in
+                self?.onFrame?(sample, pixel, captured)
+            }
+            generator.start(fps: config.fps)
+            lock.withLock {
+                testPattern = generator
+                self.descriptor = TestPatternGenerator.descriptor
+                self.config = config
+                filterSource = source
+            }
+            return TestPatternGenerator.descriptor
+        }
+        #endif
         if source.kind == .camera {
             let camera = try await CameraCapture.start(deviceID: source.id, queue: outputQueue) { [weak self] sample, pixel in
                 guard let self else { return }
@@ -145,12 +178,12 @@ final class CaptureService: NSObject, @unchecked Sendable {
                 self.lock.unlock()
                 self.onFrame?(sample, pixel, wallClockNanos())
             }
-            lock.lock()
-            self.camera = camera
-            descriptor = camera.descriptor
-            self.config = config
-            filterSource = source
-            lock.unlock()
+            lock.withLock {
+                self.camera = camera
+                self.descriptor = camera.descriptor
+                self.config = config
+                filterSource = source
+            }
             return camera.descriptor
         }
 
@@ -158,36 +191,39 @@ final class CaptureService: NSObject, @unchecked Sendable {
         let stream = SCStream(filter: filter, configuration: streamConfiguration(for: filter, config: config), delegate: self)
         try stream.addStreamOutput(self, type: .screen, sampleHandlerQueue: outputQueue)
         try await stream.startCapture()
-        lock.lock()
-        self.stream = stream
-        self.filter = filter
-        self.filterSource = source
-        self.descriptor = descriptor
-        self.config = config
-        lock.unlock()
+        lock.withLock {
+            self.stream = stream
+            self.filter = filter
+            self.filterSource = source
+            self.descriptor = descriptor
+            self.config = config
+        }
         log.info("Capture started: \(descriptor.title, privacy: .private)")
         return descriptor
     }
 
     func update(config: CaptureConfig) async throws {
-        lock.lock()
-        let stream = self.stream
-        let filter = self.filter
-        let changed = self.config != config
-        self.config = config
-        lock.unlock()
+        let (stream, filter, changed) = lock.withLock { () -> (SCStream?, SCContentFilter?, Bool) in
+            let changed = self.config != config
+            self.config = config
+            return (self.stream, self.filter, changed)
+        }
         guard changed, let stream, let filter else { return }
         try await stream.updateConfiguration(streamConfiguration(for: filter, config: config))
     }
 
     func stop() async {
-        lock.lock()
-        let stream = self.stream
-        let camera = self.camera
-        self.stream = nil
-        self.camera = nil
-        lastCameraFrame = nil
-        lock.unlock()
+        let (stream, camera) = lock.withLock { () -> (SCStream?, CameraCapture?) in
+            let current = (self.stream, self.camera)
+            self.stream = nil
+            self.camera = nil
+            lastCameraFrame = nil
+            #if DEBUG
+            testPattern?.stop()
+            testPattern = nil
+            #endif
+            return current
+        }
         if let stream {
             try? await stream.stopCapture()
         }
@@ -276,27 +312,28 @@ final class CaptureService: NSObject, @unchecked Sendable {
     /// Captures a still at up to `maxDimension` px (0 = native) with ScreenCaptureKit,
     /// or grabs the latest camera frame.
     func snapshot(source: CaptureSourceID, maxDimension: Int, showsCursor: Bool, excludeOwnApp: Bool) async throws -> CGImage {
+        #if DEBUG
+        if source == TestPatternGenerator.sourceID, let image = TestPatternGenerator.snapshot(maxDimension: maxDimension) {
+            return image
+        }
+        #endif
         if source.kind == .camera {
-            lock.lock()
-            let frame = lastCameraFrame
-            lock.unlock()
+            let frame = lock.withLock { lastCameraFrame }
             guard let frame, let image = ImageCodec.cgImage(from: frame) else {
                 throw CaptureError.snapshotFailed("The camera isn't running.")
             }
             return ImageCodec.scaled(image, maxDimension: maxDimension)
         }
-        lock.lock()
-        var filter = filterSource == source ? self.filter : nil
-        lock.unlock()
+        var filter = lock.withLock { filterSource == source ? self.filter : nil }
         if filter == nil {
             let made = try await makeFilter(for: source, excludeOwnApp: excludeOwnApp)
             filter = made.0
-            lock.lock()
-            if self.stream == nil {
-                self.filter = made.0
-                self.filterSource = source
+            lock.withLock {
+                if self.stream == nil {
+                    self.filter = made.0
+                    self.filterSource = source
+                }
             }
-            lock.unlock()
         }
         guard let filter else { throw CaptureError.sourceUnavailable }
         let configuration = SCStreamConfiguration()

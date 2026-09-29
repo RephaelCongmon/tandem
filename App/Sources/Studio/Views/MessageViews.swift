@@ -154,9 +154,9 @@ private struct AssistantMessageView: View {
                 Text("No answer was returned.").font(TandemFont.callout).foregroundStyle(Theme.textTertiary)
             }
         case .failed(let error):
-            InlineBanner(text: error, systemImage: "exclamationmark.octagon.fill", tint: Theme.danger, actionTitle: "Retry") {
+            InlineBanner(text: error, systemImage: "exclamationmark.octagon.fill", tint: Theme.danger, actionTitle: "Retry", action: {
                 model.chat.retry(message.id)
-            }
+            })
         case .cancelled:
             Label("Stopped", systemImage: "stop.circle").font(TandemFont.caption).foregroundStyle(Theme.textTertiary)
         case .refused(let explanation):
@@ -164,8 +164,9 @@ private struct AssistantMessageView: View {
                 text: explanation.map { "The model declined: \($0)" } ?? "The model declined to answer this request.",
                 systemImage: "hand.raised.fill",
                 tint: Theme.warning,
-                actionTitle: "Retry"
-            ) { model.chat.retry(message.id) }
+                actionTitle: "Retry",
+                action: { model.chat.retry(message.id) }
+            )
         }
     }
 

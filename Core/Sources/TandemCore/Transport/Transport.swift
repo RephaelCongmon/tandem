@@ -81,7 +81,7 @@ public enum TransportState: Sendable, Equatable {
 ///
 /// Threading: every callback is delivered on the `queue` the transport was created
 /// with, and all methods must be called on that queue.
-public protocol ByteTransport: AnyObject {
+public protocol ByteTransport: AnyObject, Sendable {
     var queue: DispatchQueue { get }
     /// The link currently carrying the bytes. May be refined once the connection is ready.
     var linkKind: LinkKind { get }

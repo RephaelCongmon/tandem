@@ -24,7 +24,7 @@ final class SourceEngine {
         var streamRequest: StreamRequest?
         var automation: AutomationStatus?
 
-        var name: String { connection.peer?.name ?? "Studio" }
+        @MainActor var name: String { connection.peer?.name ?? "Studio" }
         var isWatching: Bool { approved && (streamRequest?.enabled ?? false) }
     }
 
@@ -105,7 +105,7 @@ final class SourceEngine {
         let had = hasScreenPermission
         hasScreenPermission = CaptureService.hasScreenRecordingPermission
         if hasScreenPermission, captureState == .needsPermission { captureState = .idle }
-        if !hasScreenPermission, selectedSource?.kind != .camera { captureState = .needsPermission }
+        if !hasScreenPermission, CaptureService.requiresScreenPermission(selectedSource) { captureState = .needsPermission }
         if had != hasScreenPermission {
             Task { await refreshCatalog() }
             reconcile()
@@ -235,7 +235,7 @@ final class SourceEngine {
         } catch CaptureError.permissionDenied {
             hasScreenPermission = false
             catalog = CameraCapture.availableCameras()
-            if selectedSource?.kind != .camera { captureState = .needsPermission }
+            if CaptureService.requiresScreenPermission(selectedSource) { captureState = .needsPermission }
         } catch {
             log.error("Catalog failed: \(error.localizedDescription, privacy: .public)")
         }
@@ -268,7 +268,7 @@ final class SourceEngine {
             if wants { wanting.append(quality) }
         }
         let needsCapture = active && !wanting.isEmpty && selectedSource != nil
-            && (hasScreenPermission || selectedSource?.kind == .camera)
+            && (hasScreenPermission || !CaptureService.requiresScreenPermission(selectedSource))
         if needsCapture, let source = selectedSource {
             let config = CaptureConfig(
                 maxDimension: wanting.map(\.maxDimension).max() ?? 1920,
@@ -360,7 +360,7 @@ final class SourceEngine {
         if !viewer.approved {
             state = .paused
             message = "Waiting for approval on \(DeviceIdentity.systemName)."
-        } else if !hasScreenPermission && selectedSource?.kind != .camera {
+        } else if !hasScreenPermission && CaptureService.requiresScreenPermission(selectedSource) {
             state = .needsPermission
             message = "Screen Recording permission is needed on the shared Mac."
         } else if !isSharingEnabled {
@@ -530,7 +530,7 @@ final class SourceEngine {
 
     /// A small still of the selected source for the idle preview.
     func thumbnail(maxDimension: Int = 960) async -> CGImage? {
-        guard let source = selectedSource, isActive, hasScreenPermission || source.kind == .camera else { return nil }
+        guard let source = selectedSource, isActive, hasScreenPermission || !CaptureService.requiresScreenPermission(source) else { return nil }
         return try? await capture.snapshot(source: source, maxDimension: maxDimension, showsCursor: settings.showCursor, excludeOwnApp: settings.excludeTandemWindows)
     }
 
