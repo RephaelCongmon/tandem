@@ -76,7 +76,10 @@ private struct GeneralSettings: View {
                 }
                 .onChange(of: settings.appearance) { _, _ in model.applyAppearance() }
                 Toggle("Show in menu bar", isOn: $settings.showInMenuBar)
-                Toggle("Open at login", isOn: Binding(get: { model.launchAtLogin }, set: { model.setLaunchAtLogin($0) }))
+                Toggle(isOn: Binding(get: { model.launchAtLogin }, set: { model.setLaunchAtLogin($0) })) {
+                    Text("Open at login")
+                    Text("When sharing, Tandem starts quietly in the menu bar and waits for your other Mac.")
+                }
             }
         }
         .formStyle(.grouped)

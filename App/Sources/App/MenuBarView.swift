@@ -5,11 +5,17 @@ import TandemUI
 /// Menu bar icon: shows at a glance whether this Mac is sharing or connected.
 struct MenuBarIcon: View {
     let model: AppModel
+    @Environment(\.openWindow) private var openWindow
+    @Environment(\.openSettings) private var openSettings
 
     var body: some View {
         Image(systemName: symbol)
             .symbolRenderingMode(.hierarchical)
             .accessibilityLabel("Tandem — \(accessibilityState)")
+            // The icon exists even when Tandem starts without a window (e.g. at login).
+            .onAppear {
+                model.registerSceneActions(openMainWindow: { openWindow(id: "main") }, openSettings: { openSettings() })
+            }
     }
 
     private var symbol: String {

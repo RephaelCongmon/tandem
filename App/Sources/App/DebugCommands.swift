@@ -11,17 +11,30 @@ import TandemCore
 @MainActor
 enum DebugCommands {
     static let notificationName = Notification.Name("com.rofel.tandem.debug")
-    private static var observer: NSObjectProtocol?
+    private static var receiver: Receiver?
 
-    static func install(model: AppModel) {
-        guard observer == nil else { return }
-        observer = DistributedNotificationCenter.default().addObserver(forName: notificationName, object: nil, queue: .main) { note in
+    /// Selector-based so delivery isn't suspended while Tandem runs in the background.
+    private final class Receiver: NSObject {
+        let model: AppModel
+        init(model: AppModel) { self.model = model }
+
+        @objc func received(_ note: Notification) {
             guard let raw = note.object as? String else { return }
             let parts = raw.split(separator: "|", maxSplits: 2, omittingEmptySubsequences: false).map(String.init)
             guard parts.count >= 2, parts[0] == (AppEnvironment.profile ?? "") else { return }
             let argument = parts.count > 2 ? parts[2] : ""
-            MainActor.assumeIsolated { run(parts[1], argument: argument, model: model) }
+            MainActor.assumeIsolated { DebugCommands.run(parts[1], argument: argument, model: model) }
         }
+    }
+
+    static func install(model: AppModel) {
+        guard receiver == nil else { return }
+        let receiver = Receiver(model: model)
+        self.receiver = receiver
+        DistributedNotificationCenter.default().addObserver(
+            receiver, selector: #selector(Receiver.received(_:)), name: notificationName, object: nil,
+            suspensionBehavior: .deliverImmediately
+        )
     }
 
     private static func run(_ command: String, argument: String, model: AppModel) {
@@ -52,6 +65,11 @@ enum DebugCommands {
             model.studio.restartAutomation()
         case "settings":
             model.openSettingsAction?()
+        case "close":
+            for window in NSApp.windows where window.identifier?.rawValue == "main" || window.title == "Tandem" { window.close() }
+        case "show":
+            Logger(subsystem: "com.rofel.tandem", category: "Debug").notice("TANDEM-SHOW hasAction=\(model.openMainWindowAction != nil, privacy: .public)")
+            model.showMainWindow()
         case "newThread":
             model.chat.newThread()
         case "toast":

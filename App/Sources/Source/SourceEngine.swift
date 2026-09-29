@@ -45,6 +45,8 @@ final class SourceEngine {
     private(set) var pauseReason: String?
     /// Source-side "Don't Allow": the manager refuses that Studio for a while.
     @ObservationIgnored var onDenySessions: ((String) -> Void)?
+    /// A session is waiting for approval from someone at this Mac.
+    @ObservationIgnored var onNeedsDecision: (() -> Void)?
     private(set) var isLockPaused = false
     private(set) var lastReply: ReplyMirror?
     private(set) var lastPush: PushFeedback?
@@ -158,7 +160,7 @@ final class SourceEngine {
             guard let self, let connection else { return }
             self.handle(message, from: connection)
         }
-        if !approved { NSApp.requestUserAttention(.criticalRequest) }
+        if !approved { onNeedsDecision?() }
         sendStatus(to: connection)
         if approved { sendCatalog(to: connection) }
     }

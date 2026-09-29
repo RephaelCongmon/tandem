@@ -18,6 +18,7 @@ struct RootView: View {
             }
         }
         .background(Theme.canvas)
+        .background(MainWindowConfigurator(shouldHide: { model.consumeStartsHidden() }))
         .sheet(item: incomingPairing) { request in
             IncomingPairingSheet(request: request)
                 .environment(model)
@@ -31,8 +32,7 @@ struct RootView: View {
                 .environment(model)
         }
         .onAppear {
-            model.openMainWindowAction = { openWindow(id: "main") }
-            model.openSettingsAction = { openSettings() }
+            model.registerSceneActions(openMainWindow: { openWindow(id: "main") }, openSettings: { openSettings() })
         }
     }
 
@@ -66,6 +66,34 @@ struct RootView: View {
             },
             set: { _ in }
         )
+    }
+}
+
+/// The main window is left out of macOS state restoration, so a login launch in the
+/// background has nothing to reopen, and it closes itself when a sharing Mac opened at
+/// login (Tandem keeps listening from the menu bar).
+private struct MainWindowConfigurator: NSViewRepresentable {
+    let shouldHide: () -> Bool
+
+    func makeNSView(context: Context) -> NSView {
+        let view = ConfiguringView()
+        view.shouldHide = shouldHide
+        return view
+    }
+
+    func updateNSView(_ nsView: NSView, context: Context) {}
+
+    final class ConfiguringView: NSView {
+        var shouldHide: (() -> Bool)?
+
+        override func viewDidMoveToWindow() {
+            super.viewDidMoveToWindow()
+            guard let window else { return }
+            window.isRestorable = false
+            if shouldHide?() == true {
+                DispatchQueue.main.async { window.close() }
+            }
+        }
     }
 }
 

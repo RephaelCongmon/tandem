@@ -42,6 +42,12 @@ It's built for moments like: your work laptop can't run AI tools but your person
 - **Send Snapshot** (⌃⌥S from any app) pushes a screenshot; **Send with Note…** (⌃⌥N) opens a small panel to add context first. The answer appears on the Studio and, optionally, on this Mac too.
 - **Pause** (⌃⌥P) stops all capture instantly. Sharing also pauses automatically while the Mac is locked.
 
+### Leaving the shared Mac alone
+
+The Source never needs attention after pairing. Close its window and Tandem keeps listening from the menu bar; turn on **Settings › General › Open at login** and it starts that way after every login, with no window. When the Studio connects or reconnects (after Wi-Fi drops, sleep, or either app restarting), nothing appears on the shared Mac and it never takes focus. macOS shows its own screen-recording indicator in the menu bar while the screen is being captured.
+
+The only things that put a prompt on the shared Mac are pairing a new Mac (or pairing again after one side forgot the other), and **Ask before each session** if you turn it on in Settings › Sharing. The window then comes forward with the prompt, without taking keyboard focus from the app in use.
+
 ### Global shortcuts (defaults — change them in Settings › Shortcuts)
 
 | Mac | Shortcut | Action |

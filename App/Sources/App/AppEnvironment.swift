@@ -71,6 +71,15 @@ enum AppEnvironment {
         #endif
     }
 
+    /// Development-only: behave as if macOS opened Tandem as a login item.
+    static var simulateLoginLaunch: Bool {
+        #if DEBUG
+        return UserDefaults.standard.bool(forKey: "TandemSimulateLoginLaunch")
+        #else
+        return false
+        #endif
+    }
+
     /// Development-only: override the AI base URL (e.g. a local mock server).
     static var debugAIBaseURL: URL? {
         #if DEBUG

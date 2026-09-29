@@ -7,7 +7,7 @@ scripts/test_all.sh
 ```
 
 It runs:
-- **304 core tests.** Wire codec, secure handshake (including man-in-the-middle, tamper and replay), real-TCP loopback sessions, H.264 encode→decode, image codec, context building, stores, AI clients against recorded streams, Markdown, Bluetooth stream transport, markup renderer and editor, hotkeys.
+- **305 core tests.** Wire codec, secure handshake (including man-in-the-middle, tamper and replay), real-TCP loopback sessions, H.264 encode→decode, image codec, context building, stores, AI clients against recorded streams, Markdown, Bluetooth stream transport, markup renderer and editor, hotkeys.
 - **9 app tests.** Chat streaming, failure/retry, stop, snapshots, busy handling, settings persistence, hotkey overrides.
 - **An app build** that fails on any warning.
 
@@ -17,7 +17,9 @@ It runs:
 
 Verified this way:
 - auto-pairing over Bonjour (6-digit code sheets on both sides; codes match);
-- session reconnect after restarts and after a hard kill of the Source;
+- session reconnect after restarts and after a hard kill of either side, with no prompt, window or focus change on the Source;
+- a Source opened at login (`-TandemSimulateLoginLaunch YES`, launched with `open -g`) staying window-less while it pairs, reconnects and answers captures, and its window opening from the Dock or menu bar afterwards;
+- a pairing request bringing the hidden Source's window forward with the code sheet, without activating it;
 - live view at 1920×1080, 30 fps, with 8–20 ms measured capture-to-display latency over loopback;
 - stream pausing while the Studio window is hidden and resuming when it's visible;
 - ask with a live snapshot, which produces a correct Anthropic request: `claude-opus-5-5`, adaptive thinking, `effort`, `fallbacks: "default"` plus its beta header, `cache_control`, and a base64 JPEG;
@@ -33,7 +35,7 @@ These need two real Macs (and permissions only a person can grant):
 1. **Screen Recording.**
    - On the Source, choose a display and approve the macOS prompt; the live view appears on the Studio.
    - Switch to a window, then back to a display, from both the Source's picker and the Studio's **Source** menu.
-   - Close the shared window: the Source falls back to the main display.
+   - Close the shared window: sharing pauses and the Source asks what to share next.
 2. **Camera.** Choose a camera on the Source, approve the camera prompt, and confirm the live view and snapshots.
 3. **Links.**
    - Same Wi-Fi: the badge shows *Wi-Fi*.
@@ -58,3 +60,4 @@ These need two real Macs (and permissions only a person can grant):
    - Repeat with an OpenAI key.
    - Try an OpenAI-compatible local server (LM Studio at `http://localhost:1234/v1`).
 9. **Sleep/wake.** Sleep the Studio, wake it: it reconnects on its own.
+10. **Background Source.** Turn on **Open at login** on the Source, log out and in: no window appears, the menu bar icon does, and the Studio connects. Clicking the Dock icon or **Open Tandem** shows the window.

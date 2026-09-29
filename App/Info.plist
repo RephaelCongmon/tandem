@@ -45,5 +45,7 @@
 	<string>NSApplication</string>
 	<key>NSScreenCaptureUsageDescription</key>
 	<string>Tandem shares this Mac's screen with the other Mac you paired, only while sharing is on.</string>
+	<key>NSSupportsAutomaticTermination</key>
+	<false/>
 </dict>
 </plist>

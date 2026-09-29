@@ -56,6 +56,8 @@ final class ConnectionManager {
 
     @ObservationIgnored var onEstablished: ((PeerConnection) -> Void)?
     @ObservationIgnored var onClosed: ((PeerConnection, PeerLinkCloseReason) -> Void)?
+    /// A pairing request is waiting for someone at this Mac.
+    @ObservationIgnored var onNeedsDecision: (() -> Void)?
 
     @ObservationIgnored private let settings: SettingsStore
     @ObservationIgnored private let trust: TrustedPeerStore
@@ -549,7 +551,7 @@ final class ConnectionManager {
             return
         }
         pendingPairing = PairingRequest(id: connection.id, code: code, peer: peer)
-        NSApp.requestUserAttention(.criticalRequest)
+        onNeedsDecision?()
     }
 
     private func established(_ connection: PeerConnection, peer: DeviceIdentity, linkKind: LinkKind) {

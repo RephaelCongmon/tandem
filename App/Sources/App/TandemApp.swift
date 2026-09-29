@@ -37,6 +37,18 @@ struct TandemApp: App {
 }
 
 final class AppDelegate: NSObject, NSApplicationDelegate {
+    func applicationWillFinishLaunching(_ notification: Notification) {
+        // Tandem listens for the other Mac with no window open; macOS must not quit it.
+        ProcessInfo.processInfo.automaticTerminationSupportEnabled = false
+        // The launch event says whether macOS opened Tandem as a login item.
+        let event = NSAppleEventManager.shared().currentAppleEvent
+        let asLoginItem = event?.eventID == AEEventID(kAEOpenApplication)
+            && event?.paramDescriptor(forKeyword: AEKeyword(keyAEPropData))?.enumCodeValue == OSType(keyAELaunchedAsLogInItem)
+        MainActor.assumeIsolated {
+            AppModel.shared.launchedAtLogin = asLoginItem || AppEnvironment.simulateLoginLaunch
+        }
+    }
+
     func applicationDidFinishLaunching(_ notification: Notification) {
         // Unit tests host the app; don't start networking or capture under them.
         guard ProcessInfo.processInfo.environment["XCTestConfigurationFilePath"] == nil else { return }
@@ -50,9 +62,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     }
 
     func applicationShouldHandleReopen(_ sender: NSApplication, hasVisibleWindows flag: Bool) -> Bool {
-        if !flag {
-            MainActor.assumeIsolated { AppModel.shared.showMainWindow() }
-        }
+        // Returning true also lets SwiftUI create the window if none exists yet.
+        MainActor.assumeIsolated { AppModel.shared.showMainWindow(reopenIfNeeded: false) }
         return true
     }
 

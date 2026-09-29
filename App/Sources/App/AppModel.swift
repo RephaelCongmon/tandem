@@ -21,6 +21,13 @@ final class AppModel {
     let toasts = ToastCenter()
     private(set) var identity: DeviceIdentity
     private(set) var launchAtLogin = SMAppService.mainApp.status == .enabled
+    /// macOS opened Tandem at login. A sharing Mac then starts quietly in the menu bar.
+    @ObservationIgnored var launchedAtLogin = false
+    /// Set once the launch window was hidden or the user asked for the window.
+    @ObservationIgnored private var launchWindowDecided = false
+    @ObservationIgnored private let launchedAt = Date()
+    @ObservationIgnored private var activity: NSObjectProtocol?
+    @ObservationIgnored private var activityOptions: ProcessInfo.ActivityOptions = []
 
     /// Set by the first SwiftUI view that appears; opens (or reopens) the main window.
     @ObservationIgnored var openMainWindowAction: (() -> Void)?
@@ -47,6 +54,7 @@ final class AppModel {
             guard let self else { return }
             // Route by the running role (also set during onboarding, before `settings.role`).
             self.route(connection)
+            self.updateActivity()
             if connection.newlyPaired, let peer = connection.peer {
                 self.toasts.show("Paired with \(peer.name)", systemImage: "checkmark.seal.fill")
             }
@@ -54,8 +62,11 @@ final class AppModel {
         connections.onClosed = { [weak self] connection, _ in
             self?.source.detach(connection)
             self?.studio.detach(connection)
+            self?.updateActivity()
         }
         source.onDenySessions = { [weak self] peerID in self?.connections.denySessions(from: peerID) }
+        connections.onNeedsDecision = { [weak self] in self?.presentForDecision() }
+        source.onNeedsDecision = { [weak self] in self?.presentForDecision() }
         hotkeys.model = self
     }
 
@@ -64,10 +75,38 @@ final class AppModel {
         let arguments = UserDefaults.standard
         if let raw = arguments.string(forKey: "TandemRole"), let role = AppRole(rawValue: raw) { settings.role = role }
         if arguments.bool(forKey: "TandemTestPattern") { settings.captureSource = TestPatternGenerator.sourceID }
+        // Saved by the app itself, so reading it back never raises a Keychain prompt.
+        if let key = ProcessInfo.processInfo.environment["TANDEM_DEBUG_API_KEY"], !key.isEmpty {
+            try? keys.setKey(key, for: settings.provider)
+        }
         DebugCommands.install(model: self)
+        let showAfter = arguments.double(forKey: "TandemShowWindowAfter")
+        if showAfter > 0 {
+            // Stands in for clicking "Open Tandem" in the menu bar (for launch checks).
+            Task { @MainActor in
+                try? await Task.sleep(nanoseconds: UInt64(showAfter * 1_000_000_000))
+                Logger(subsystem: "com.rofel.tandem", category: "Debug").notice("TANDEM-SHOW hasAction=\(self.openMainWindowAction != nil, privacy: .public)")
+                self.showMainWindow()
+            }
+        }
         #endif
         applyAppearance()
         if let role = settings.role { activate(role) }
+    }
+
+    /// Whether the main window should close itself as it first appears: a sharing Mac
+    /// opened at login keeps listening from the menu bar. Answers true at most once, only
+    /// right after launch, and never once the user has asked for the window.
+    func consumeStartsHidden() -> Bool {
+        guard !launchWindowDecided else { return false }
+        launchWindowDecided = true
+        return launchedAtLogin && settings.role == .source && Date().timeIntervalSince(launchedAt) < 15
+    }
+
+    /// Called by any SwiftUI view that can open scenes, so AppKit code can open them too.
+    func registerSceneActions(openMainWindow: @escaping () -> Void, openSettings: @escaping () -> Void) {
+        openMainWindowAction = openMainWindow
+        openSettingsAction = openSettings
     }
 
     // MARK: Roles
@@ -85,6 +124,7 @@ final class AppModel {
         // Sessions established during onboarding are handed to the engine now.
         for connection in connections.establishedConnections { route(connection) }
         hotkeys.registerAll()
+        updateActivity()
     }
 
     private func route(_ connection: PeerConnection) {
@@ -107,6 +147,25 @@ final class AppModel {
         source.deactivate()
         hotkeys.unregisterAll()
         settings.role = nil
+        updateActivity()
+    }
+
+    /// Without a visible window macOS naps a background app (delaying its network
+    /// callbacks by seconds) and may even quit it. While Tandem listens for or talks to
+    /// the other Mac it tells the system this is user-requested, latency-critical work.
+    /// Idle system sleep stays allowed, so an unattended laptop can still sleep.
+    private func updateActivity() {
+        var options: ProcessInfo.ActivityOptions = []
+        if settings.role != nil, connections.role != nil { options.insert(.userInitiatedAllowingIdleSystemSleep) }
+        if !connections.establishedConnections.isEmpty { options.formUnion([.userInitiatedAllowingIdleSystemSleep, .latencyCritical]) }
+        guard options != activityOptions else { return }
+        let previous = activity
+        activity = options.isEmpty ? nil : ProcessInfo.processInfo.beginActivity(
+            options: options,
+            reason: options.contains(.latencyCritical) ? "Connected to another Mac" : "Waiting for your other Mac"
+        )
+        activityOptions = options
+        if let previous { ProcessInfo.processInfo.endActivity(previous) }
     }
 
     // MARK: Identity & preferences
@@ -137,13 +196,38 @@ final class AppModel {
         launchAtLogin = SMAppService.mainApp.status == .enabled
     }
 
-    func showMainWindow() {
+    /// Shows the main window. `reopenIfNeeded` covers a Tandem that started in the
+    /// background, where no view exists yet to open it: LaunchServices reopens the app,
+    /// which makes SwiftUI create the window just as a Dock click does.
+    func showMainWindow(reopenIfNeeded: Bool = true) {
+        launchWindowDecided = true
         NSApp.activate(ignoringOtherApps: true)
-        if let window = NSApp.windows.first(where: { $0.identifier?.rawValue == "main" || $0.title == "Tandem" }), window.canBecomeMain {
+        if let window = mainWindow {
             window.makeKeyAndOrderFront(nil)
+        } else if let openMainWindowAction {
+            openMainWindowAction()
+        } else if reopenIfNeeded {
+            NSWorkspace.shared.openApplication(at: Bundle.main.bundleURL, configuration: NSWorkspace.OpenConfiguration())
+        }
+    }
+
+    private var mainWindow: NSWindow? {
+        NSApp.windows.first { ($0.identifier?.rawValue == "main" || $0.title == "Tandem") && $0.canBecomeMain }
+    }
+
+    /// A pairing request or session approval needs someone at this Mac, and its prompt
+    /// lives in the main window: bring the window forward (even when Tandem runs quietly
+    /// in the menu bar) without taking keyboard focus from the app they're using.
+    private func presentForDecision() {
+        launchWindowDecided = true
+        if let window = mainWindow {
+            window.orderFrontRegardless()
         } else {
             openMainWindowAction?()
+            // SwiftUI creates the window on its next pass.
+            DispatchQueue.main.async { [weak self] in self?.mainWindow?.orderFrontRegardless() }
         }
+        NSApp.requestUserAttention(.criticalRequest)
     }
 
     func prepareForTermination() {
