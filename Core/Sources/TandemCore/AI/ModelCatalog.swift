@@ -109,9 +109,10 @@ public enum ModelCatalog {
     private static let allEfforts = ReasoningEffort.allCases
 
     /// Fable / Mythos: thinking is always on; `thinking` is only sent to request a summary.
+    /// Server-side fallbacks are available.
     static let claudeAlwaysThinking = ModelCapabilities(
         sendsThinkingParam: false, supportsThinkingDisplay: true, supportedEfforts: allEfforts,
-        supportsFallbacks: false, maxImageLongEdge: 2576
+        supportsFallbacks: true, maxImageLongEdge: 2576
     )
     /// Opus 5.x, Sonnet 5.5+: adaptive thinking with display, every effort, server-side fallbacks.
     static let claudeFrontier = ModelCapabilities(
@@ -129,7 +130,7 @@ public enum ModelCatalog {
         sendsThinkingParam: true, supportsThinkingDisplay: false, supportedEfforts: [.low, .medium, .high, .max],
         supportsFallbacks: false, maxImageLongEdge: 1568
     )
-    /// Haiku and pre-4.6 models: no thinking or effort parameters.
+    /// Haiku 4.5 and older, and pre-4.6 Opus/Sonnet: no thinking or effort parameters.
     static let claudeLegacy = ModelCapabilities(
         sendsThinkingParam: false, supportsThinkingDisplay: false, supportedEfforts: [],
         supportsFallbacks: false, maxImageLongEdge: 1568
@@ -140,12 +141,13 @@ public enum ModelCatalog {
     public static func anthropicCapabilities(for model: String) -> ModelCapabilities {
         guard let parsed = ClaudeModelID(model) else { return claudeAdaptive }
         switch parsed.family {
-        case .legacy, .haiku:
+        case .legacy:
             return claudeLegacy
+        case .haiku:
+            // A Haiku newer than 4.5 is unknown to this catalog; give it the default profile.
+            return parsed.version > ClaudeModelID.Version(4, 5) ? claudeAdaptive : claudeLegacy
         case .fable, .mythos:
-            var capabilities = claudeAlwaysThinking
-            capabilities.supportsFallbacks = parsed.family == .fable && parsed.version >= ClaudeModelID.Version(5, 1)
-            return capabilities
+            return claudeAlwaysThinking
         case .opus:
             if parsed.version >= ClaudeModelID.Version(5, 0) { return claudeFrontier }
             if parsed.version >= ClaudeModelID.Version(4, 7) { return claudeAdaptive }
@@ -230,7 +232,8 @@ struct ClaudeModelID: Hashable {
         let components = id.split(separator: "-").map(String.init)
         guard let first = components.first else { return nil }
 
-        if first.first?.isNumber == true || first == "instant" || id.contains("haiku") {
+        if first.first?.isNumber == true || first == "instant" {
+            // Pre-4 naming (`claude-3-5-haiku-…`, `claude-3-opus-…`, `claude-instant-…`).
             let family: Family = id.contains("haiku") ? .haiku : .legacy
             self.init(family: family, version: Version(0, 0))
             return
@@ -240,6 +243,7 @@ struct ClaudeModelID: Hashable {
         switch first {
         case "opus": family = .opus
         case "sonnet": family = .sonnet
+        case "haiku": family = .haiku
         case "fable": family = .fable
         case "mythos": family = .mythos
         default: family = .unknown

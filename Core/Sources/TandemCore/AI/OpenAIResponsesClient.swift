@@ -30,7 +30,7 @@ public struct OpenAIResponsesClient: AIClient {
     // MARK: Streaming
 
     public func stream(_ request: AIRequest) -> AsyncThrowingStream<AIStreamEvent, Error> {
-        AIEventStream.make { continuation in
+        AIEventStream.make(redacting: [endpoint.apiKey.trimmingCharacters(in: .whitespacesAndNewlines)]) { continuation in
             try await run(request, continuation: continuation)
         }
     }
@@ -136,13 +136,15 @@ public struct OpenAIResponsesClient: AIClient {
     }
 
     /// Decides whether an HTTP 400 can be retried with reasoning options removed: a message
-    /// mentioning `summary` drops the summary; one mentioning `reasoning`/`effort` drops the whole
-    /// `reasoning` object. Returns `nil` when the error isn't recoverable this way.
+    /// mentioning `summary`/`summaries` drops the summary; one mentioning `reasoning`/`effort` drops
+    /// the whole `reasoning` object. Returns `nil` when the error isn't recoverable this way.
     static func degrade(_ options: OpenAIWireOptions, status: Int, message: String) -> OpenAIWireOptions? {
         guard status == 400 else { return nil }
         let text = message.lowercased()
         var next = options
-        if options.summary, text.contains("summary") {
+        // "summar" also matches "…verified to generate reasoning summaries", which must not cost
+        // the request its effort setting.
+        if options.summary, text.contains("summar") {
             next.summary = false
         } else if options.effort || options.summary, text.contains("reasoning") || text.contains("effort") {
             next.effort = false
@@ -204,6 +206,13 @@ struct OpenAIResponsesStreamParser: AIStreamParser {
     private var sawRefusal = false
     private var reasoningEmitted = false
     private var needsReasoningSeparator = false
+    private var currentSummaryPart: SummaryPart?
+
+    /// Identifies one reasoning-summary part.
+    private struct SummaryPart: Hashable {
+        var itemID: String?
+        var index: Int?
+    }
 
     init(includeReasoning: Bool) {
         self.includeReasoning = includeReasoning
@@ -243,6 +252,10 @@ struct OpenAIResponsesStreamParser: AIStreamParser {
 
         case "response.reasoning_summary_text.delta":
             guard includeReasoning, let delta = payload.delta, !delta.isEmpty else { return [] }
+            // A new (item, summary index) pair is a new part even if `part.added` wasn't sent.
+            let part = SummaryPart(itemID: payload.itemId, index: payload.summaryIndex)
+            if reasoningEmitted, part != currentSummaryPart { needsReasoningSeparator = true }
+            currentSummaryPart = part
             var events: [AIStreamEvent] = []
             if needsReasoningSeparator, reasoningEmitted { events.append(.reasoningDelta("\n\n")) }
             needsReasoningSeparator = false
@@ -353,6 +366,7 @@ struct OpenAIResponsesStreamParser: AIStreamParser {
         }
 
         var delta: String?
+        var itemId: String?
         var summaryIndex: Int?
         var response: Response?
         var code: LenientText?

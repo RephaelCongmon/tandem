@@ -30,7 +30,7 @@ public struct AnthropicClient: AIClient {
     // MARK: Streaming
 
     public func stream(_ request: AIRequest) -> AsyncThrowingStream<AIStreamEvent, Error> {
-        AIEventStream.make { continuation in
+        AIEventStream.make(redacting: [endpoint.apiKey.trimmingCharacters(in: .whitespacesAndNewlines)]) { continuation in
             try await run(request, continuation: continuation)
         }
     }
