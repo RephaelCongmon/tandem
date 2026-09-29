@@ -56,6 +56,8 @@ enum DebugCommands {
             model.chat.newThread()
         case "toast":
             model.toasts.show(argument, systemImage: "sparkles")
+        case "kick":
+            for viewer in model.source.viewers { model.connections.disconnect(viewer.connection) }
         case "dump":
             dump(model: model)
         case "snap":

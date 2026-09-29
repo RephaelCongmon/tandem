@@ -156,66 +156,76 @@ final class SettingsStore {
     @ObservationIgnored private let defaults: UserDefaults
     @ObservationIgnored private let encoder = JSONEncoder()
     @ObservationIgnored private let decoder = JSONDecoder()
+    @ObservationIgnored private var isLoading = false
 
     // MARK: General
-    var role: AppRole? { didSet { store(role, "role") } }
-    var deviceName: String { didSet { store(deviceName, "deviceName") } }
-    var appearance: AppearancePreference { didSet { store(appearance, "appearance") } }
-    var showInMenuBar: Bool { didSet { store(showInMenuBar, "showInMenuBar") } }
-    var linkPreference: LinkPreference { didSet { store(linkPreference, "linkPreference") } }
-    var bluetoothEnabled: Bool { didSet { store(bluetoothEnabled, "bluetoothEnabled") } }
+    var role: AppRole? = nil { didSet { store(role, "role") } }
+    var deviceName: String = "" { didSet { store(deviceName, "deviceName") } }
+    var appearance: AppearancePreference = .system { didSet { store(appearance, "appearance") } }
+    var showInMenuBar: Bool = true { didSet { store(showInMenuBar, "showInMenuBar") } }
+    var linkPreference: LinkPreference = .automatic { didSet { store(linkPreference, "linkPreference") } }
+    var bluetoothEnabled: Bool = true { didSet { store(bluetoothEnabled, "bluetoothEnabled") } }
 
     // MARK: Source
-    var captureSource: CaptureSourceID? { didSet { store(captureSource, "source.capture") } }
-    var showCursor: Bool { didSet { store(showCursor, "source.showCursor") } }
-    var excludeTandemWindows: Bool { didSet { store(excludeTandemWindows, "source.excludeTandem") } }
-    var allowRemoteSourceSelection: Bool { didSet { store(allowRemoteSourceSelection, "source.allowRemoteSelection") } }
-    var acceptPairingRequests: Bool { didSet { store(acceptPairingRequests, "source.acceptPairing") } }
-    var approveEachSession: Bool { didSet { store(approveEachSession, "source.approveEachSession") } }
-    var showRepliesOnSource: Bool { didSet { store(showRepliesOnSource, "source.showReplies") } }
-    var pauseWhenLocked: Bool { didSet { store(pauseWhenLocked, "source.pauseWhenLocked") } }
-    var snapshotResolution: SnapshotResolution { didSet { store(snapshotResolution, "source.snapshotResolution") } }
-    var snapshotQuality: Double { didSet { store(snapshotQuality, "source.snapshotQuality") } }
+    var captureSource: CaptureSourceID? = nil { didSet { store(captureSource, "source.capture") } }
+    var showCursor: Bool = true { didSet { store(showCursor, "source.showCursor") } }
+    var excludeTandemWindows: Bool = true { didSet { store(excludeTandemWindows, "source.excludeTandem") } }
+    var allowRemoteSourceSelection: Bool = true { didSet { store(allowRemoteSourceSelection, "source.allowRemoteSelection") } }
+    var acceptPairingRequests: Bool = true { didSet { store(acceptPairingRequests, "source.acceptPairing") } }
+    var approveEachSession: Bool = false { didSet { store(approveEachSession, "source.approveEachSession") } }
+    var showRepliesOnSource: Bool = true { didSet { store(showRepliesOnSource, "source.showReplies") } }
+    var pauseWhenLocked: Bool = true { didSet { store(pauseWhenLocked, "source.pauseWhenLocked") } }
+    var snapshotResolution: SnapshotResolution = .high { didSet { store(snapshotResolution, "source.snapshotResolution") } }
+    var snapshotQuality: Double = 0.9 { didSet { store(snapshotQuality, "source.snapshotQuality") } }
 
     // MARK: Studio / AI
-    var provider: AIProviderKind { didSet { store(provider, "ai.provider") } }
-    var anthropicModel: String { didSet { store(anthropicModel, "ai.anthropicModel") } }
-    var openAIModel: String { didSet { store(openAIModel, "ai.openAIModel") } }
-    var customModel: String { didSet { store(customModel, "ai.customModel") } }
-    var customBaseURL: String { didSet { store(customBaseURL, "ai.customBaseURL") } }
-    var effort: ReasoningEffort { didSet { store(effort, "ai.effort") } }
-    var maxOutputTokens: Int { didSet { store(maxOutputTokens, "ai.maxOutputTokens") } }
-    var showReasoning: Bool { didSet { store(showReasoning, "ai.showReasoning") } }
-    var systemPrompt: String { didSet { store(systemPrompt, "ai.systemPrompt") } }
-    var maxImagesInContext: Int { didSet { store(maxImagesInContext, "ai.maxImages") } }
-    var liveQuality: LiveQualityPreset { didSet { store(liveQuality, "studio.liveQuality") } }
-    var attachLiveSnapshot: Bool { didSet { store(attachLiveSnapshot, "studio.attachLive") } }
-    var pushBehavior: PushBehavior { didSet { store(pushBehavior, "studio.pushBehavior") } }
-    var pushPrompt: String { didSet { store(pushPrompt, "studio.pushPrompt") } }
-    var mirrorReplies: Bool { didSet { store(mirrorReplies, "studio.mirrorReplies") } }
-    var autoConnect: Bool { didSet { store(autoConnect, "studio.autoConnect") } }
-    var lastSourceID: String? { didSet { store(lastSourceID, "studio.lastSourceID") } }
-    var showStage: Bool { didSet { store(showStage, "studio.showStage") } }
+    var provider: AIProviderKind = .anthropic { didSet { store(provider, "ai.provider") } }
+    var anthropicModel: String = ModelCatalog.defaultModelID(for: .anthropic) ?? "claude-opus-5-5" { didSet { store(anthropicModel, "ai.anthropicModel") } }
+    var openAIModel: String = ModelCatalog.defaultModelID(for: .openAI) ?? "gpt-6-astra" { didSet { store(openAIModel, "ai.openAIModel") } }
+    var customModel: String = "" { didSet { store(customModel, "ai.customModel") } }
+    var customBaseURL: String = AIProviderKind.openAICompatible.defaultBaseURL.absoluteString { didSet { store(customBaseURL, "ai.customBaseURL") } }
+    var effort: ReasoningEffort = .low { didSet { store(effort, "ai.effort") } }
+    var maxOutputTokens: Int = 16_000 { didSet { store(maxOutputTokens, "ai.maxOutputTokens") } }
+    var showReasoning: Bool = true { didSet { store(showReasoning, "ai.showReasoning") } }
+    var systemPrompt: String = SettingsStore.defaultSystemPrompt { didSet { store(systemPrompt, "ai.systemPrompt") } }
+    var maxImagesInContext: Int = 4 { didSet { store(maxImagesInContext, "ai.maxImages") } }
+    var liveQuality: LiveQualityPreset = .balanced { didSet { store(liveQuality, "studio.liveQuality") } }
+    var attachLiveSnapshot: Bool = true { didSet { store(attachLiveSnapshot, "studio.attachLive") } }
+    var pushBehavior: PushBehavior = .askImmediately { didSet { store(pushBehavior, "studio.pushBehavior") } }
+    var pushPrompt: String = SettingsStore.defaultPushPrompt { didSet { store(pushPrompt, "studio.pushPrompt") } }
+    var mirrorReplies: Bool = true { didSet { store(mirrorReplies, "studio.mirrorReplies") } }
+    var autoConnect: Bool = true { didSet { store(autoConnect, "studio.autoConnect") } }
+    var lastSourceID: String? = nil { didSet { store(lastSourceID, "studio.lastSourceID") } }
+    var showStage: Bool = true { didSet { store(showStage, "studio.showStage") } }
 
     // MARK: Automation
-    var autoCaptureEnabled: Bool { didSet { store(autoCaptureEnabled, "auto.enabled") } }
-    var autoCaptureInterval: Double { didSet { store(autoCaptureInterval, "auto.interval") } }
-    var onlyWhenChanged: Bool { didSet { store(onlyWhenChanged, "auto.onlyWhenChanged") } }
-    var changeSensitivity: ChangeSensitivity { didSet { store(changeSensitivity, "auto.sensitivity") } }
-    var autoAsk: Bool { didSet { store(autoAsk, "auto.ask") } }
-    var autoPrompt: String { didSet { store(autoPrompt, "auto.prompt") } }
-    var maxAutoAsksPerHour: Int { didSet { store(maxAutoAsksPerHour, "auto.maxPerHour") } }
+    var autoCaptureEnabled: Bool = false { didSet { store(autoCaptureEnabled, "auto.enabled") } }
+    var autoCaptureInterval: Double = 30 { didSet { store(autoCaptureInterval, "auto.interval") } }
+    var onlyWhenChanged: Bool = true { didSet { store(onlyWhenChanged, "auto.onlyWhenChanged") } }
+    var changeSensitivity: ChangeSensitivity = .medium { didSet { store(changeSensitivity, "auto.sensitivity") } }
+    var autoAsk: Bool = true { didSet { store(autoAsk, "auto.ask") } }
+    var autoPrompt: String = SettingsStore.defaultAutoPrompt { didSet { store(autoPrompt, "auto.prompt") } }
+    var maxAutoAsksPerHour: Int = 60 { didSet { store(maxAutoAsksPerHour, "auto.maxPerHour") } }
 
     // MARK: Privacy
-    var keepImages: Bool { didSet { store(keepImages, "privacy.keepImages") } }
-    var historyRetentionDays: Int { didSet { store(historyRetentionDays, "privacy.retentionDays") } }
+    var keepImages: Bool = false { didSet { store(keepImages, "privacy.keepImages") } }
+    var historyRetentionDays: Int = 30 { didSet { store(historyRetentionDays, "privacy.retentionDays") } }
 
     // MARK: Shortcuts
     /// Per-action overrides. Missing = default combo; `nil` value = disabled.
-    var hotkeyOverrides: [String: KeyCombo?] { didSet { store(hotkeyOverrides, "hotkeys") } }
+    var hotkeyOverrides: [String: KeyCombo?] = [:] { didSet { store(hotkeyOverrides, "hotkeys") } }
 
     init(defaults: UserDefaults) {
         self.defaults = defaults
+        reload()
+    }
+
+    /// Loads every value from defaults (falling back to the built-in defaults)
+    /// without writing anything back.
+    private func reload() {
+        isLoading = true
+        defer { isLoading = false }
+        let defaults = self.defaults
         func load<T: Decodable>(_ key: String, _ fallback: T) -> T {
             guard let data = defaults.data(forKey: "tandem.\(key)"),
                   let value = try? JSONDecoder().decode(T.self, from: data) else { return fallback }
@@ -227,7 +237,6 @@ final class SettingsStore {
         showInMenuBar = load("showInMenuBar", true)
         linkPreference = load("linkPreference", .automatic)
         bluetoothEnabled = load("bluetoothEnabled", true)
-
         captureSource = load("source.capture", nil)
         showCursor = load("source.showCursor", true)
         excludeTandemWindows = load("source.excludeTandem", true)
@@ -238,7 +247,6 @@ final class SettingsStore {
         pauseWhenLocked = load("source.pauseWhenLocked", true)
         snapshotResolution = load("source.snapshotResolution", .high)
         snapshotQuality = load("source.snapshotQuality", 0.9)
-
         provider = load("ai.provider", .anthropic)
         anthropicModel = load("ai.anthropicModel", ModelCatalog.defaultModelID(for: .anthropic) ?? "claude-opus-5-5")
         openAIModel = load("ai.openAIModel", ModelCatalog.defaultModelID(for: .openAI) ?? "gpt-6-astra")
@@ -257,7 +265,6 @@ final class SettingsStore {
         autoConnect = load("studio.autoConnect", true)
         lastSourceID = load("studio.lastSourceID", nil)
         showStage = load("studio.showStage", true)
-
         autoCaptureEnabled = load("auto.enabled", false)
         autoCaptureInterval = load("auto.interval", 30)
         onlyWhenChanged = load("auto.onlyWhenChanged", true)
@@ -265,15 +272,13 @@ final class SettingsStore {
         autoAsk = load("auto.ask", true)
         autoPrompt = load("auto.prompt", Self.defaultAutoPrompt)
         maxAutoAsksPerHour = load("auto.maxPerHour", 60)
-
         keepImages = load("privacy.keepImages", false)
         historyRetentionDays = load("privacy.retentionDays", 30)
-
         hotkeyOverrides = load("hotkeys", [:])
     }
 
     private func store<T: Encodable>(_ value: T, _ key: String) {
-        guard let data = try? encoder.encode(value) else { return }
+        guard !isLoading, let data = try? encoder.encode(value) else { return }
         defaults.set(data, forKey: "tandem.\(key)")
     }
 
@@ -316,8 +321,12 @@ final class SettingsStore {
         }
     }
 
+    /// Restores every setting to its default, in memory and on disk.
     func resetAll() {
-        let keys = defaults.dictionaryRepresentation().keys.filter { $0.hasPrefix("tandem.") && $0 != "tandem.deviceID" }
+        let keys = defaults.dictionaryRepresentation().keys.filter {
+            $0.hasPrefix("tandem.") && $0 != "tandem.deviceID" && $0 != "tandem.trustedPeers"
+        }
         for key in keys { defaults.removeObject(forKey: key) }
+        reload()
     }
 }

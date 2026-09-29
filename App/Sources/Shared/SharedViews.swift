@@ -195,21 +195,36 @@ struct WindowVisibilityReader: NSViewRepresentable {
         var onChange: ((Bool) -> Void)?
         private var observer: NSObjectProtocol?
 
+        private var closeObserver: NSObjectProtocol?
+
         override func viewDidMoveToWindow() {
             super.viewDidMoveToWindow()
             if let observer { NotificationCenter.default.removeObserver(observer) }
-            guard let window else { return }
+            if let closeObserver { NotificationCenter.default.removeObserver(closeObserver) }
+            observer = nil
+            closeObserver = nil
+            guard let window else {
+                // Removed from its window (closed): nobody can see it.
+                onChange?(false)
+                return
+            }
             observer = NotificationCenter.default.addObserver(
                 forName: NSWindow.didChangeOcclusionStateNotification, object: window, queue: .main
             ) { [weak self] _ in
                 guard let window = self?.window else { return }
                 self?.onChange?(window.occlusionState.contains(.visible))
             }
+            closeObserver = NotificationCenter.default.addObserver(
+                forName: NSWindow.willCloseNotification, object: window, queue: .main
+            ) { [weak self] _ in
+                self?.onChange?(false)
+            }
             onChange?(window.occlusionState.contains(.visible))
         }
 
         deinit {
             if let observer { NotificationCenter.default.removeObserver(observer) }
+            if let closeObserver { NotificationCenter.default.removeObserver(closeObserver) }
         }
     }
 }

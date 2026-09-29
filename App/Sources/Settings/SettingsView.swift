@@ -53,7 +53,12 @@ private struct GeneralSettings: View {
                 }
                 TextField("Name", text: $settings.deviceName, prompt: Text(DeviceIdentity.systemName))
                     .onSubmit { model.applyDeviceName() }
-                    .onChange(of: settings.deviceName) { _, _ in model.applyDeviceName() }
+                    .task(id: settings.deviceName) {
+                        // Debounced: re-advertising on every keystroke is wasteful.
+                        try? await Task.sleep(nanoseconds: 700_000_000)
+                        guard !Task.isCancelled else { return }
+                        model.applyDeviceName()
+                    }
             }
             Section("Connection") {
                 Picker("Preferred link", selection: $settings.linkPreference) {
@@ -89,8 +94,11 @@ private struct SharingSettings: View {
             Section("What's shared") {
                 LabeledContent("Source") { SourcePicker().fixedSize() }
                 Toggle("Show the pointer", isOn: $settings.showCursor)
+                    .onChange(of: settings.showCursor) { _, _ in model.source.captureSettingsChanged() }
                 Toggle("Hide Tandem's own windows", isOn: $settings.excludeTandemWindows)
+                    .onChange(of: settings.excludeTandemWindows) { _, _ in model.source.captureSettingsChanged() }
                 Toggle("Let the Studio choose what's shared", isOn: $settings.allowRemoteSourceSelection)
+                    .onChange(of: settings.allowRemoteSourceSelection) { _, _ in model.source.remoteSelectionSettingChanged() }
             }
             Section("Snapshots") {
                 Picker("Resolution", selection: $settings.snapshotResolution) {
@@ -465,6 +473,7 @@ private struct PrivacySettings: View {
                         Text("90 days").tag(90)
                         Text("Never").tag(0)
                     }
+                    .onChange(of: settings.historyRetentionDays) { _, _ in model.chat.applyRetentionNow() }
                     Button("Clear All History…", role: .destructive) { confirmClear = true }
                 }
             }

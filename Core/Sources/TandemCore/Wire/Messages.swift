@@ -283,6 +283,8 @@ public enum ControlMessage: Codable, Sendable, Hashable {
     case ping(PingPayload)
     case pong(PongPayload)
     case goodbye(reason: String)
+    /// The sender's user ended the session deliberately; the receiver shouldn't reconnect.
+    case dismissed(reason: String)
 }
 
 // MARK: - Binary payloads

@@ -85,7 +85,20 @@ enum InterfaceNames {
 /// Ethernet, Thunderbolt Bridge, or loopback).
 public final class NetworkTransport: ByteTransport {
     public let queue: DispatchQueue
-    public private(set) var linkKind: LinkKind = .other
+    /// Read from several queues (encoder, UI), written on `queue`, so it's locked.
+    public var linkKind: LinkKind {
+        linkKindLock.lock()
+        defer { linkKindLock.unlock() }
+        return storedLinkKind
+    }
+    private var storedLinkKind: LinkKind = .other
+    private let linkKindLock = NSLock()
+
+    private func setLinkKind(_ kind: LinkKind) {
+        linkKindLock.lock()
+        storedLinkKind = kind
+        linkKindLock.unlock()
+    }
     public var remoteDescription: String { "\(connection.endpoint)" }
     public var preferredWindowBytes: Int { linkKind.isConstrained ? 64 * 1024 : 1024 * 1024 }
 
@@ -116,7 +129,7 @@ public final class NetworkTransport: ByteTransport {
         }
         connection.pathUpdateHandler = { [weak self] path in
             guard let self else { return }
-            self.linkKind = TandemNetwork.linkKind(for: path)
+            self.setLinkKind(TandemNetwork.linkKind(for: path))
         }
         connection.start(queue: queue)
     }
@@ -146,7 +159,7 @@ public final class NetworkTransport: ByteTransport {
             log.info("Connection waiting: \(error.localizedDescription, privacy: .public)")
             onStateChange?(.connecting)
         case .ready:
-            linkKind = TandemNetwork.linkKind(for: connection.currentPath)
+            setLinkKind(TandemNetwork.linkKind(for: connection.currentPath))
             onStateChange?(.ready)
             receiveNext()
         case .failed(let error):

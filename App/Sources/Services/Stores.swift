@@ -54,8 +54,31 @@ struct TrustedPeer: Codable, Hashable, Identifiable {
     var pairedAt: Date
     var lastConnectedAt: Date?
     var lastLink: LinkKind?
+    /// The last session failed authentication; the user must pair again. The key is
+    /// kept (never deleted automatically) so a spoofed failure can't erase a pairing.
+    var needsRepair = false
 
     var identity: DeviceIdentity { DeviceIdentity(id: id, name: name, model: model) }
+
+    init(id: String, name: String, model: String, pairedAt: Date, lastConnectedAt: Date?, lastLink: LinkKind?) {
+        self.id = id
+        self.name = name
+        self.model = model
+        self.pairedAt = pairedAt
+        self.lastConnectedAt = lastConnectedAt
+        self.lastLink = lastLink
+    }
+
+    init(from decoder: Decoder) throws {
+        let container = try decoder.container(keyedBy: CodingKeys.self)
+        id = try container.decode(String.self, forKey: .id)
+        name = try container.decode(String.self, forKey: .name)
+        model = try container.decode(String.self, forKey: .model)
+        pairedAt = try container.decode(Date.self, forKey: .pairedAt)
+        lastConnectedAt = try container.decodeIfPresent(Date.self, forKey: .lastConnectedAt)
+        lastLink = try container.decodeIfPresent(LinkKind.self, forKey: .lastLink)
+        needsRepair = try container.decodeIfPresent(Bool.self, forKey: .needsRepair) ?? false
+    }
 }
 
 /// Paired devices: metadata in defaults, secrets in the Keychain.
@@ -81,6 +104,16 @@ final class TrustedPeerStore {
         peers.contains { $0.id == id }
     }
 
+    func needsRepair(_ id: String) -> Bool {
+        peers.first { $0.id == id }?.needsRepair ?? false
+    }
+
+    func markNeedsRepair(_ id: String) {
+        guard let index = peers.firstIndex(where: { $0.id == id }), !peers[index].needsRepair else { return }
+        peers[index].needsRepair = true
+        persist()
+    }
+
     func peer(_ id: String) -> TrustedPeer? {
         peers.first { $0.id == id }
     }
@@ -93,6 +126,7 @@ final class TrustedPeerStore {
             peers[index].model = identity.model
             peers[index].lastConnectedAt = now
             peers[index].lastLink = link
+            peers[index].needsRepair = false
         } else {
             peers.append(TrustedPeer(id: identity.id, name: identity.name, model: identity.model, pairedAt: now, lastConnectedAt: now, lastLink: link))
         }

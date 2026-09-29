@@ -149,6 +149,26 @@ final class PeerLinkLoopbackTests: XCTestCase {
         XCTAssertEqual(received?.data, image)
     }
 
+    func testDismissTellsPeerNotToReconnect() throws {
+        try pairOverLoopback()
+        let studioClosed = expectation(description: "studio saw dismissal")
+        var reason: PeerLinkCloseReason?
+        let studio = try XCTUnwrap(studioLink)
+        let source = try XCTUnwrap(sourceLink)
+        studio.queue.sync {
+            studio.onStateChange = { state in
+                if case .closed(let why) = state {
+                    reason = why
+                    studioClosed.fulfill()
+                }
+            }
+        }
+        source.queue.async { source.close(reason: "Ended by the Source user", dismiss: true) }
+        wait(for: [studioClosed], timeout: 5)
+        XCTAssertEqual(reason, .dismissedByPeer("Ended by the Source user"))
+        XCTAssertEqual(reason?.isRecoverable, false)
+    }
+
     func testDeclinedPairingClosesBothSides() throws {
         let studioClosed = expectation(description: "studio closed")
         let port = try startListener(policy: ResponderPolicy(acceptsPairing: true)) { [weak self] link in

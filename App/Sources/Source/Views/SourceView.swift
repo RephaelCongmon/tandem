@@ -179,14 +179,14 @@ private struct SourcePreviewPanel: View {
     private var idleOverlay: some View {
         let source = model.source
         if !source.isSharingEnabled {
-            EmptyStateView(systemImage: "pause.circle", title: "Sharing is paused", message: "Nothing is captured or sent while paused. Resume to let your Studio see this Mac again.") {
+            EmptyStateView(systemImage: "pause.circle", title: "Sharing is paused", message: source.pauseReason ?? "Nothing is captured or sent while paused. Resume to let your Studio see this Mac again.") {
                 Button("Resume Sharing") { source.setSharing(true) }.buttonStyle(TandemButtonStyle(.primary))
             }
         } else if source.isLockPaused {
             EmptyStateView(systemImage: "lock", title: "Paused while locked", message: "Sharing resumes automatically when you unlock this Mac.")
         } else if case .error(let message) = source.captureState {
             EmptyStateView(systemImage: "exclamationmark.triangle", title: "Couldn't capture", message: message) {
-                Button("Try Again") { Task { await source.refreshCatalog() } }.buttonStyle(TandemButtonStyle(.secondary))
+                Button("Try Again") { source.retryCapture() }.buttonStyle(TandemButtonStyle(.secondary))
             }
         } else if source.viewers.isEmpty {
             EmptyStateView(

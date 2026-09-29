@@ -45,11 +45,14 @@ final class ToastCenter {
     }
 
     private func dismiss() {
+        let dismissing = current?.id
         NSAnimationContext.runAnimationGroup({ context in
             context.duration = 0.25
             panel?.animator().alphaValue = 0
         }, completionHandler: {
             MainActor.assumeIsolated {
+                // A newer toast may have appeared during the fade.
+                guard self.current?.id == dismissing else { return }
                 self.panel?.orderOut(nil)
                 self.current = nil
             }
@@ -131,6 +134,10 @@ final class QuickNotePanelController {
 
     func present(model: AppModel) {
         guard model.settings.role == .source else { return }
+        guard model.source.canPush else {
+            model.toasts.show(model.source.isActive ? "No Studio is connected" : "Sharing is paused", systemImage: "exclamationmark.triangle.fill", style: .warning)
+            return
+        }
         Task {
             await model.source.prepareNotePush()
             show(model: model)

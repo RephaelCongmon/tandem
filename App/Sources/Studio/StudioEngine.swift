@@ -45,7 +45,10 @@ final class StudioEngine {
     private(set) var lastPushAt: Date?
     var livePreviewEnabled = true { didSet { sendStreamRequest() } }
     /// False while the Studio window is minimized/occluded, to save bandwidth.
-    var isStageVisible = true { didSet { if oldValue != isStageVisible { sendStreamRequest() } } }
+    var isStageVisible = true { didSet { if oldValue != isStageVisible { scheduleStreamRequest() } } }
+    /// How many live-view stages are mounted (0 when the stage panel is hidden).
+    @ObservationIgnored private var stageMounts = 0
+    @ObservationIgnored private var streamRequestTask: Task<Void, Never>?
 
     // Automation
     private(set) var nextAutoCaptureAt: Date?
@@ -55,7 +58,14 @@ final class StudioEngine {
     let chat: ChatController
     @ObservationIgnored let renderer = LiveVideoRenderer()
     @ObservationIgnored private let settings: SettingsStore
-    @ObservationIgnored private var pending: [UUID: CheckedContinuation<ReceivedSnapshot, Error>] = [:]
+    private struct PendingSnapshot {
+        let continuation: CheckedContinuation<ReceivedSnapshot, Error>
+        var deadline: Date
+        let idleTimeout: Double
+        var watchdog: Task<Void, Never>?
+    }
+
+    @ObservationIgnored private var pending: [UUID: PendingSnapshot] = [:]
     @ObservationIgnored private var automationTask: Task<Void, Never>?
     @ObservationIgnored private let log = Logger(subsystem: "com.rofel.tandem", category: "Studio")
 
@@ -106,7 +116,13 @@ final class StudioEngine {
         connection.onControl = { [weak self] message in self?.handle(message) }
         connection.onSnapshot = { [weak self] snapshot in self?.received(snapshot) }
         connection.onSnapshotRejected = { [weak self] id, reason in
-            self?.pending.removeValue(forKey: id)?.resume(throwing: SnapshotRequestError.failed(reason))
+            self?.resolve(id, with: .failure(SnapshotRequestError.failed(reason)))
+        }
+        connection.onSnapshotProgress = { [weak self] progress in
+            // Data is still arriving: a slow (e.g. Bluetooth) transfer isn't a timeout.
+            guard let self, var entry = self.pending[progress.id] else { return }
+            entry.deadline = Date().addingTimeInterval(entry.idleTimeout)
+            self.pending[progress.id] = entry
         }
         sendStreamRequest()
         sendAutomationStatus()
@@ -119,14 +135,15 @@ final class StudioEngine {
         connection.videoSink.value = nil
         connection.onControl = nil
         connection.onSnapshot = nil
+        connection.onSnapshotProgress = nil
+        connection.onSnapshotRejected = nil
         self.connection = nil
         sourceStatus = nil
         remoteCatalog = []
         hasVideo = false
         liveStats = LiveStats()
         renderer.reset()
-        for (_, continuation) in pending { continuation.resume(throwing: SnapshotRequestError.notConnected) }
-        pending.removeAll()
+        for id in Array(pending.keys) { resolve(id, with: .failure(SnapshotRequestError.notConnected)) }
         restartAutomation()
     }
 
@@ -146,17 +163,17 @@ final class StudioEngine {
         case .sourceCatalog(let catalog):
             remoteCatalog = catalog
         case .snapshotUnchanged(let id):
-            pending.removeValue(forKey: id)?.resume(throwing: SnapshotRequestError.unchanged)
+            resolve(id, with: .failure(SnapshotRequestError.unchanged))
         case .snapshotFailed(let id, let reason):
-            pending.removeValue(forKey: id)?.resume(throwing: SnapshotRequestError.failed(reason))
+            resolve(id, with: .failure(SnapshotRequestError.failed(reason)))
         default:
             break
         }
     }
 
     private func received(_ snapshot: ReceivedSnapshot) {
-        if let continuation = pending.removeValue(forKey: snapshot.header.id) {
-            continuation.resume(returning: snapshot)
+        if pending[snapshot.header.id] != nil {
+            resolve(snapshot.header.id, with: .success(snapshot))
             return
         }
         guard snapshot.header.trigger == .sourcePush else { return }
@@ -175,9 +192,33 @@ final class StudioEngine {
 
     // MARK: Requests
 
+    /// The stage view appeared/disappeared (e.g. panel hidden, focus mode swaps).
+    func stageAppeared() {
+        stageMounts += 1
+        scheduleStreamRequest()
+    }
+
+    func stageDisappeared() {
+        stageMounts = max(0, stageMounts - 1)
+        scheduleStreamRequest()
+    }
+
+    /// Coalesces bursts of visibility changes into one request.
+    private func scheduleStreamRequest() {
+        streamRequestTask?.cancel()
+        streamRequestTask = Task { [weak self] in
+            try? await Task.sleep(nanoseconds: 250_000_000)
+            guard !Task.isCancelled else { return }
+            self?.sendStreamRequest()
+        }
+    }
+
+    /// Stream only while someone can actually see it.
+    var wantsLiveVideo: Bool { livePreviewEnabled && isStageVisible && stageMounts > 0 }
+
     func sendStreamRequest() {
         guard let connection, connection.isConnected else { return }
-        let enabled = livePreviewEnabled && isStageVisible
+        let enabled = wantsLiveVideo
         connection.send(.control(.streamRequest(StreamRequest(enabled: enabled, quality: settings.liveQuality.quality))))
         if !enabled {
             hasVideo = false
@@ -213,17 +254,33 @@ final class StudioEngine {
             quality: 0.9,
             skipIfUnchangedBelow: skipIfUnchangedBelow
         )
-        let timeout: Double = connection.linkKind.isConstrained ? 45 : 12
+        // Idle timeout: extended whenever chunks arrive (see onSnapshotProgress).
+        let timeout: Double = connection.linkKind.isConstrained ? 30 : 12
         isCapturing = true
-        defer { isCapturing = !pending.isEmpty }
         return try await withCheckedThrowingContinuation { continuation in
-            pending[request.id] = continuation
-            connection.send(.control(.snapshotRequest(request)))
-            Task { [weak self] in
-                try? await Task.sleep(nanoseconds: UInt64(timeout * 1_000_000_000))
-                self?.pending.removeValue(forKey: request.id)?.resume(throwing: SnapshotRequestError.timedOut)
+            let id = request.id
+            var entry = PendingSnapshot(continuation: continuation, deadline: Date().addingTimeInterval(timeout), idleTimeout: timeout)
+            entry.watchdog = Task { [weak self] in
+                while !Task.isCancelled {
+                    try? await Task.sleep(nanoseconds: 500_000_000)
+                    guard let self, let current = self.pending[id] else { return }
+                    if Date() > current.deadline {
+                        self.resolve(id, with: .failure(SnapshotRequestError.timedOut))
+                        return
+                    }
+                }
             }
+            pending[id] = entry
+            connection.send(.control(.snapshotRequest(request)))
         }
+    }
+
+    /// Completes a pending snapshot request exactly once and stops its watchdog.
+    private func resolve(_ id: UUID, with result: Result<ReceivedSnapshot, Error>) {
+        guard let entry = pending.removeValue(forKey: id) else { return }
+        entry.watchdog?.cancel()
+        isCapturing = !pending.isEmpty
+        entry.continuation.resume(with: result)
     }
 
     /// Hotkey / button: capture now and ask using the composer text (or the default prompt).
@@ -299,7 +356,15 @@ final class StudioEngine {
         }
         let threshold = settings.onlyWhenChanged ? settings.changeSensitivity.threshold : nil
         do {
+            let connectionID = connection?.id
             let snapshot = try await requestSnapshot(trigger: .interval, skipIfUnchangedBelow: threshold)
+            // Automation may have been turned off (or the Source changed) meanwhile.
+            guard !Task.isCancelled, settings.autoCaptureEnabled, connection?.id == connectionID else { return }
+            if asking, chat.isBusy {
+                chat.addToComposer(snapshot, sourceName: sourceName, automatic: true)
+                lastAutoResult = "Skipped — still answering"
+                return
+            }
             if asking {
                 autoAsks.append(Date())
                 chat.ask(prompt: settings.autoPrompt, snapshot: snapshot, sourceName: sourceName, trigger: .interval)

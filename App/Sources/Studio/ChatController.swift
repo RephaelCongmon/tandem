@@ -97,7 +97,12 @@ final class ChatController {
         threads = store.loadAll()
         applyRetention()
         selectedThreadID = threads.first?.id
+        retentionTimer = Timer.scheduledTimer(withTimeInterval: 3600, repeats: true) { [weak self] _ in
+            MainActor.assumeIsolated { self?.applyRetentionNow() }
+        }
     }
+
+    @ObservationIgnored private var retentionTimer: Timer?
 
     // MARK: Threads
 
@@ -119,7 +124,7 @@ final class ChatController {
         }
     }
 
-    var isBusy: Bool { streaming != nil || isCapturingForSend }
+    var isBusy: Bool { streaming != nil || isCapturingForSend || !applyingMarkup.isEmpty }
 
     @discardableResult
     func newThread() -> UUID {
@@ -176,6 +181,14 @@ final class ChatController {
         store.save(threads[index])
     }
 
+    /// Re-applies history retention (called periodically and when it changes).
+    func applyRetentionNow() {
+        applyRetention()
+        if let selectedThreadID, !threads.contains(where: { $0.id == selectedThreadID }) {
+            self.selectedThreadID = filteredThreads.first?.id
+        }
+    }
+
     private func applyRetention() {
         let days = settings.historyRetentionDays
         guard days > 0 else { return }
@@ -189,22 +202,50 @@ final class ChatController {
 
     // MARK: Composer attachments
 
+    /// Attachments whose markup is still being rendered; sending waits for them so
+    /// an unredacted original can never go out.
+    private(set) var applyingMarkup: Set<UUID> = []
+
     /// Adds a received snapshot to the composer.
     func addToComposer(_ snapshot: ReceivedSnapshot, sourceName: String?, automatic: Bool = false) {
         let attachment = makeAttachment(from: snapshot, sourceName: sourceName)
         snapshots.put(snapshot.data, id: attachment.id)
-        if automatic { composerAttachments.removeAll(where: \.isAutomatic) }
+        if automatic { discardFromComposer { $0.isAutomatic } }
         let thumb = ImageCodec.thumbnail(snapshot.data, maxPixelSize: 360).map { NSImage(cgImage: $0, size: .zero) } ?? NSImage()
         composerAttachments.append(ComposerAttachment(attachment: attachment, originalData: snapshot.data, markup: nil, thumbnail: thumb, isAutomatic: automatic))
-        if composerAttachments.count > 8 { composerAttachments.removeFirst(composerAttachments.count - 8) }
+        if composerAttachments.count > 8 {
+            let overflow = Set(composerAttachments.prefix(composerAttachments.count - 8).map(\.id))
+            discardFromComposer { overflow.contains($0.id) }
+        }
     }
 
     func removeFromComposer(_ id: UUID) {
-        composerAttachments.removeAll { $0.id == id }
+        discardFromComposer { $0.id == id }
+    }
+
+    /// Removes unsent attachments and frees their pixels.
+    private func discardFromComposer(where predicate: (ComposerAttachment) -> Bool) {
+        let removed = composerAttachments.filter { predicate($0) && !applyingMarkup.contains($0.id) }
+        guard !removed.isEmpty else { return }
+        let ids = Set(removed.map(\.id))
+        composerAttachments.removeAll { ids.contains($0.id) }
+        snapshots.remove(Array(ids))
+    }
+
+    /// The editor opened for this attachment: keep it (no longer "automatic").
+    func beginEditing(_ id: UUID) {
+        guard let index = composerAttachments.firstIndex(where: { $0.id == id }) else { return }
+        composerAttachments[index].isAutomatic = false
+    }
+
+    /// The editor finished and is rendering; block sending until `applyMarkup`.
+    func beginApplyingMarkup(_ id: UUID) {
+        applyingMarkup.insert(id)
     }
 
     /// Replaces an attachment's image with an edited version.
     func applyMarkup(to id: UUID, rendered: Data, width: Int, height: Int, markup: MarkupDocumentBox?) {
+        defer { applyingMarkup.remove(id) }
         guard let index = composerAttachments.firstIndex(where: { $0.id == id }) else { return }
         snapshots.put(rendered, id: id)
         composerAttachments[index].attachment.pixelWidth = width

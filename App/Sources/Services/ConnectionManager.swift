@@ -75,6 +75,9 @@ final class ConnectionManager {
     @ObservationIgnored private var observers: [NSObjectProtocol] = []
     @ObservationIgnored private var maintenanceTimer: Timer?
     @ObservationIgnored private var pairingDeniedUntil: [String: Date] = [:]
+    /// Studios the Source user sent away; their reconnects are refused for a while.
+    @ObservationIgnored private var sessionDeniedUntil: [String: Date] = [:]
+    @ObservationIgnored private var reachableTargets: Set<String> = []
     @ObservationIgnored private let log = Logger(subsystem: "com.rofel.tandem", category: "Connections")
 
     static let maxIncomingSessions = 4
@@ -121,6 +124,8 @@ final class ConnectionManager {
         bluetoothBrowser = nil
         networkDiscoveries.removeAll()
         bluetoothDiscoveries.removeAll()
+        connectingDeviceIDs.removeAll()
+        reachableTargets.removeAll()
         nearby = []
         pendingPairing = nil
         desiredSourceID = nil
@@ -153,6 +158,8 @@ final class ConnectionManager {
                 bluetoothQueue.async { bluetoothBrowser.stopScanning() }
                 self.bluetoothBrowser = nil
                 bluetoothDiscoveries.removeAll()
+                // Pending Bluetooth connects die with the browser.
+                connectingDeviceIDs.removeAll()
                 rebuildNearby()
             }
         }
@@ -167,15 +174,18 @@ final class ConnectionManager {
         connections.first { $0.direction == .outgoing && $0.isConnected }
     }
 
+    /// The live (not closing) connection with a device.
     func connection(for deviceID: String) -> PeerConnection? {
-        connections.first { $0.peer?.id == deviceID && $0.phase.isLive }
+        connections.first { $0.peer?.id == deviceID && $0.phase.isLive && !$0.isClosing }
     }
 
     func isConnecting(to deviceID: String) -> Bool {
         connectingDeviceIDs.contains(deviceID) || connections.contains {
-            $0.peer?.id == deviceID && !$0.isConnected && $0.phase.isLive
+            $0.peer?.id == deviceID && !$0.isConnected && $0.phase.isLive && !$0.isClosing
         }
     }
+
+    func needsRepair(_ deviceID: String) -> Bool { trust.needsRepair(deviceID) }
 
     var localAddresses: [String] {
         var addresses: [String] = []
@@ -206,11 +216,11 @@ final class ConnectionManager {
         reconnectAttempt = 0
         reconnectTask?.cancel()
         reconnectAt = nil
-        // One Source at a time.
-        for connection in connections where connection.peer?.id != deviceID {
-            connection.close(reason: "Switched to another Mac.")
+        // One Source at a time; re-pairing replaces the current session too.
+        for connection in connections where connection.peer?.id != deviceID || forcePairing {
+            connection.close(reason: forcePairing ? "Pairing again." : "Switched to another Mac.")
         }
-        openConnection(to: deviceID, forcePairing: forcePairing)
+        openConnection(to: deviceID, forcePairing: forcePairing || trust.needsRepair(deviceID))
     }
 
     /// Connects by address when discovery isn't possible (e.g. client-isolated Wi-Fi).
@@ -230,9 +240,21 @@ final class ConnectionManager {
         }
     }
 
+    /// Ends a session on purpose. From the Source this tells the Studio not to
+    /// reconnect, and briefly refuses its reconnects.
     func disconnect(_ connection: PeerConnection) {
-        if connection.direction == .outgoing { desiredSourceID = nil }
-        connection.close(reason: "Disconnected by the other Mac's user.")
+        if connection.direction == .outgoing {
+            desiredSourceID = nil
+            connection.close(reason: "Disconnected by the other Mac's user.")
+        } else {
+            if let id = connection.peer?.id { sessionDeniedUntil[id] = Date().addingTimeInterval(15) }
+            connection.close(reason: "\(identity.name) ended the session.", dismiss: true)
+        }
+    }
+
+    /// Source: refuse this Studio's sessions for a while (after "Don't Allow").
+    func denySessions(from deviceID: String, for seconds: TimeInterval = 30) {
+        sessionDeniedUntil[deviceID] = Date().addingTimeInterval(seconds)
     }
 
     func cancelPairing() {
@@ -402,6 +424,7 @@ final class ConnectionManager {
 
     private func openConnection(to deviceID: String, forcePairing: Bool) {
         guard connection(for: deviceID) == nil, !connectingDeviceIDs.contains(deviceID) else { return }
+        let forcePairing = forcePairing || trust.needsRepair(deviceID)
         let mode: HandshakeMode = forcePairing || !trust.isTrusted(deviceID) ? .pair : .session
         let expected = nearby.first { $0.id == deviceID }?.identity ?? trust.peer(deviceID)?.identity
         let preference = settings.linkPreference
@@ -417,6 +440,13 @@ final class ConnectionManager {
             return
         }
         connectingDeviceIDs.insert(deviceID)
+        // Belt and braces: never leave a device stuck in "connecting".
+        Task { [weak self] in
+            try? await Task.sleep(nanoseconds: 25_000_000_000)
+            guard let self, self.connectingDeviceIDs.remove(deviceID) != nil else { return }
+            self.lastFailure = (deviceID, "Couldn't reach that Mac over Bluetooth.")
+            self.scheduleReconnectIfNeeded(for: deviceID)
+        }
         bluetoothQueue.async {
             bluetoothBrowser.connect(toDeviceID: deviceID) { [weak self] result in
                 onMain {
@@ -504,6 +534,12 @@ final class ConnectionManager {
         connection.update(peer: peer)
         connection.update(phase: .pairing(code: code))
         guard connection.direction == .incoming else { return }
+        // One pairing prompt at a time; a second concurrent request is declined.
+        if let pending = pendingPairing, pending.id != connection.id,
+           connections.contains(where: { $0.id == pending.id && $0.phase.isLive }) {
+            connection.decidePairing(accept: false)
+            return
+        }
         if let until = pairingDeniedUntil[peer.id], until > Date() {
             connection.decidePairing(accept: false)
             return
@@ -517,6 +553,10 @@ final class ConnectionManager {
     }
 
     private func established(_ connection: PeerConnection, peer: DeviceIdentity, linkKind: LinkKind) {
+        if connection.direction == .incoming, let until = sessionDeniedUntil[peer.id], until > Date() {
+            connection.close(reason: "\(identity.name) isn't accepting this Mac right now.", dismiss: true)
+            return
+        }
         trust.recordConnection(with: peer, link: linkKind)
         manualRetry[connection.id] = nil
         if pendingPairing?.id == connection.id { pendingPairing = nil }
@@ -525,7 +565,6 @@ final class ConnectionManager {
             other.close(reason: "Replaced by a newer connection.")
         }
         if connection.direction == .outgoing {
-            reconnectAttempt = 0
             reconnectAt = nil
             desiredSourceID = peer.id
             settings.lastSourceID = peer.id
@@ -554,15 +593,27 @@ final class ConnectionManager {
             return
         }
 
+        // A session that stayed up for a while resets the backoff.
+        if let established = connection.establishedAt, Date().timeIntervalSince(established) > 30 {
+            reconnectAttempt = 0
+        }
+        let name = connection.peer?.name ?? "That Mac"
         switch reason {
         case .handshake(.authenticationFailed), .handshake(.notPaired):
-            if let deviceID, trust.isTrusted(deviceID) {
-                trust.forget(deviceID)
-                lastFailure = (deviceID, "The pairing with \(connection.peer?.name ?? "that Mac") is no longer valid. Pair again to reconnect.")
+            // Never delete keys automatically: these failures can be spoofed or
+            // transient. Ask the user to pair again instead.
+            if let deviceID, trust.isTrusted(deviceID), connection.direction == .outgoing {
+                trust.markNeedsRepair(deviceID)
+                lastFailure = (deviceID, "\(name) no longer recognizes this pairing. Pair again to reconnect.")
             } else if connection.direction == .outgoing {
                 lastFailure = (deviceID, reason.userMessage)
             }
             if connection.direction == .outgoing, desiredSourceID == deviceID { desiredSourceID = nil }
+        case .dismissedByPeer(let message):
+            if connection.direction == .outgoing {
+                if desiredSourceID == deviceID { desiredSourceID = nil }
+                lastFailure = (deviceID, message ?? "\(name) ended the session.")
+            }
         case .closedLocally:
             break
         default:
@@ -581,15 +632,24 @@ final class ConnectionManager {
 
     // MARK: Reconnect
 
+    /// Reconnects to the chosen Source when it's reachable. A Source that just
+    /// (re)appeared is tried right away; otherwise pending backoff is respected.
     private func maybeAutoConnect() {
-        guard role == .studio, let target = desiredSourceID,
-              trust.isTrusted(target), connection(for: target) == nil, !connectingDeviceIDs.contains(target) else { return }
+        guard role == .studio, let target = desiredSourceID else {
+            reachableTargets.removeAll()
+            return
+        }
         let reachable = networkDiscoveries[target] != nil || (settings.bluetoothEnabled && bluetoothDiscoveries[target] != nil)
-        guard reachable else { return }
-        // The Source is back: don't wait out a pending backoff.
-        reconnectTask?.cancel()
-        reconnectTask = nil
-        reconnectAt = nil
+        let newlyAppeared = reachable && !reachableTargets.contains(target)
+        if reachable { reachableTargets.insert(target) } else { reachableTargets.remove(target) }
+        guard reachable, trust.isTrusted(target), !trust.needsRepair(target),
+              connection(for: target) == nil, !connectingDeviceIDs.contains(target) else { return }
+        if reconnectTask != nil {
+            guard newlyAppeared else { return }
+            reconnectTask?.cancel()
+            reconnectTask = nil
+            reconnectAt = nil
+        }
         openConnection(to: target, forcePairing: false)
     }
 
@@ -626,6 +686,7 @@ final class ConnectionManager {
             MainActor.assumeIsolated {
                 guard let self else { return }
                 self.pairingDeniedUntil = self.pairingDeniedUntil.filter { $0.value > Date() }
+                self.sessionDeniedUntil = self.sessionDeniedUntil.filter { $0.value > Date() }
                 self.maybeAutoConnect()
             }
         }

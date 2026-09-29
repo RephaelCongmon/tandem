@@ -32,6 +32,8 @@ public enum PeerLinkCloseReason: Sendable, Equatable {
     case transport(TransportError)
     case timedOut
     case closedByPeer(String?)
+    /// The other Mac's user ended the session on purpose; don't reconnect.
+    case dismissedByPeer(String?)
     case closedLocally
     case protocolError(String)
 
@@ -41,6 +43,7 @@ public enum PeerLinkCloseReason: Sendable, Equatable {
         case .transport(let error): return error.localizedDescription
         case .timedOut: return "The other Mac stopped responding."
         case .closedByPeer(let reason): return reason ?? "The other Mac disconnected."
+        case .dismissedByPeer(let reason): return reason ?? "The other Mac ended the session."
         case .closedLocally: return "Disconnected."
         case .protocolError(let detail): return "Connection error: \(detail)"
         }
@@ -53,7 +56,7 @@ public enum PeerLinkCloseReason: Sendable, Equatable {
         case .handshake(let failure):
             if case .busy = failure { return true }
             return false
-        case .closedLocally, .protocolError: return false
+        case .closedLocally, .protocolError, .dismissedByPeer: return false
         }
     }
 }
@@ -147,12 +150,13 @@ public final class PeerLink {
         transport.start()
     }
 
-    /// Sends a goodbye (best effort) and closes.
-    public func close(reason: String = "Disconnected") {
+    /// Sends a goodbye (best effort) and closes. With `dismiss`, the peer is told
+    /// the local user ended the session on purpose, so it shouldn't reconnect.
+    public func close(reason: String = "Disconnected", dismiss: Bool = false) {
         dispatchPrecondition(condition: .onQueue(queue))
         guard !isClosed else { return }
         if case .established = state {
-            enqueue(.control(.goodbye(reason: reason)), priority: .control)
+            enqueue(.control(dismiss ? .dismissed(reason: reason) : .goodbye(reason: reason)), priority: .control)
             closeAfterFlush = .closedLocally
             pump()
             // Don't wait long for the goodbye to drain.
@@ -178,12 +182,17 @@ public final class PeerLink {
         pump()
     }
 
-    /// Sends a header followed by the image bytes split into chunks.
-    public func sendSnapshot(header: SnapshotHeader, data: Data) {
+    /// Sends a header followed by the image bytes split into chunks. The chunk
+    /// count and byte count are always computed here, from the link in use.
+    public func sendSnapshot(header proposed: SnapshotHeader, data: Data) {
         dispatchPrecondition(condition: .onQueue(queue))
-        guard !isClosed else { return }
+        guard !isClosed, !data.isEmpty else { return }
+        let link = linkKind
+        var header = proposed
+        header.byteCount = data.count
+        header.chunkCount = Self.chunkCount(byteCount: data.count, link: link)
         enqueue(.control(.snapshotHeader(header)), priority: .bulk)
-        let chunkSize = Self.snapshotChunkSize(for: linkKind)
+        let chunkSize = Self.snapshotChunkSize(for: link)
         for index in 0..<header.chunkCount {
             let start = index * chunkSize
             let end = min(start + chunkSize, data.count)
@@ -353,6 +362,8 @@ public final class PeerLink {
             handlePong(pong)
         case .control(.goodbye(let reason)):
             finish(.closedByPeer(reason))
+        case .control(.dismissed(let reason)):
+            finish(.dismissedByPeer(reason))
         default:
             onMessage?(message)
         }
@@ -383,7 +394,13 @@ public final class PeerLink {
             if tickCount % 2 == 0 { sendPing() }
         case .connecting, .handshaking, .pairing:
             if now > handshakeDeadline {
-                finish(state == .connecting ? .transport(.timedOut) : .handshake(.protocolViolation("handshake timed out")))
+                switch state {
+                case .pairing:
+                    finish(.handshake(.pairingDeclined("The pairing request timed out.")))
+                default:
+                    // A stalled network or handshake is worth retrying.
+                    finish(.timedOut)
+                }
                 return
             }
         case .closed:

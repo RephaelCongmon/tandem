@@ -40,7 +40,7 @@ struct RootView: View {
 
     private var incomingPairing: Binding<PairingRequest?> {
         Binding(
-            get: { model.settings.role == .source ? model.connections.pendingPairing : nil },
+            get: { model.connections.role == .source ? model.connections.pendingPairing : nil },
             set: { value in if value == nil, model.connections.pendingPairing != nil { model.connections.respondToPairing(accept: false) } }
         )
     }
@@ -48,7 +48,7 @@ struct RootView: View {
     private var outgoingPairing: Binding<IdentifiedID?> {
         Binding(
             get: {
-                guard model.settings.role == .studio else { return nil }
+                guard model.connections.role == .studio else { return nil }
                 let connection = model.connections.connections.first {
                     $0.direction == .outgoing && $0.isPairingAttempt && $0.phase.isLive && !$0.isConnected
                 }
@@ -61,7 +61,7 @@ struct RootView: View {
     private var sessionApproval: Binding<IdentifiedID?> {
         Binding(
             get: {
-                guard model.settings.role == .source, model.connections.pendingPairing == nil else { return nil }
+                guard model.connections.role == .source, model.connections.pendingPairing == nil else { return nil }
                 return model.source.pendingApprovals.first.map { IdentifiedID(id: $0.id) }
             },
             set: { _ in }
@@ -98,9 +98,9 @@ struct IncomingPairingSheet: View {
                 Button("Decline") { model.connections.respondToPairing(accept: false) }
                     .buttonStyle(TandemButtonStyle(.secondary, size: .large))
                     .keyboardShortcut(.cancelAction)
+                // Deliberately no Return shortcut: approving must be a conscious click.
                 Button("Codes Match — Allow") { model.connections.respondToPairing(accept: true) }
                     .buttonStyle(TandemButtonStyle(.primary, size: .large))
-                    .keyboardShortcut(.defaultAction)
             }
             .padding(.top, Spacing.xs)
         }
@@ -185,7 +185,6 @@ struct SessionApprovalSheet: View {
                     .keyboardShortcut(.cancelAction)
                 Button("Allow") { model.source.approve(viewerID, allow: true) }
                     .buttonStyle(TandemButtonStyle(.primary, size: .large))
-                    .keyboardShortcut(.defaultAction)
             }
         }
         .padding(Spacing.xxl)

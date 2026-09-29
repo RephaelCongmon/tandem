@@ -2,6 +2,7 @@ import AppKit
 import AVFoundation
 import Observation
 import os
+import ScreenCaptureKit
 import TandemCore
 
 /// Everything the Source Mac does: capture, stream to viewers, answer snapshot
@@ -40,6 +41,10 @@ final class SourceEngine {
     private(set) var catalog: [CaptureSourceDescriptor] = []
     private(set) var current: CaptureSourceDescriptor?
     private(set) var isSharingEnabled = true
+    /// Why sharing was paused automatically (e.g. the shared window closed).
+    private(set) var pauseReason: String?
+    /// Source-side "Don't Allow": the manager refuses that Studio for a while.
+    @ObservationIgnored var onDenySessions: ((String) -> Void)?
     private(set) var isLockPaused = false
     private(set) var lastReply: ReplyMirror?
     private(set) var lastPush: PushFeedback?
@@ -61,6 +66,7 @@ final class SourceEngine {
     @ObservationIgnored private let settings: SettingsStore
     @ObservationIgnored private var lastFingerprints: [UUID: ImageCodec.Fingerprint] = [:]
     @ObservationIgnored private var captureChain: Task<Void, Never>?
+    @ObservationIgnored private var captureGeneration = 0
     @ObservationIgnored private var runningConfig: CaptureConfig?
     @ObservationIgnored private var runningSource: CaptureSourceID?
     @ObservationIgnored private var observers: [NSObjectProtocol] = []
@@ -154,7 +160,18 @@ final class SourceEngine {
         }
         if !approved { NSApp.requestUserAttention(.criticalRequest) }
         sendStatus(to: connection)
-        if settings.allowRemoteSourceSelection { connection.send(.control(.sourceCatalog(catalog))) }
+        if approved { sendCatalog(to: connection) }
+    }
+
+    /// What a Studio may choose from: displays and windows only (never the camera),
+    /// and only when remote selection is allowed.
+    private var remoteCatalog: [CaptureSourceDescriptor] {
+        guard settings.allowRemoteSourceSelection else { return [] }
+        return catalog.filter { $0.source.kind != .camera }
+    }
+
+    private func sendCatalog(to connection: PeerConnection) {
+        connection.send(.control(.sourceCatalog(remoteCatalog)))
     }
 
     func detach(_ connection: PeerConnection) {
@@ -172,9 +189,11 @@ final class SourceEngine {
         if allow {
             viewers[index].approved = true
             sendStatus(to: viewers[index].connection)
+            sendCatalog(to: viewers[index].connection)
             reconcile()
         } else {
-            viewers[index].connection.close(reason: "The other Mac's user declined this session.")
+            if let peerID = viewers[index].connection.peer?.id { onDenySessions?(peerID) }
+            viewers[index].connection.close(reason: "The other Mac's user declined this session.", dismiss: true)
         }
     }
 
@@ -189,17 +208,20 @@ final class SourceEngine {
         case .snapshotRequest(let request):
             handleSnapshotRequest(request, viewer: viewers[index])
         case .sourceCatalogRequest:
+            guard viewers[index].approved else { return }
             Task {
                 await refreshCatalog()
-                connection.send(.control(.sourceCatalog(settings.allowRemoteSourceSelection ? catalog : [])))
+                guard self.viewers.contains(where: { $0.id == connection.id && $0.approved }) else { return }
+                self.sendCatalog(to: connection)
             }
         case .selectSource(let source):
-            guard settings.allowRemoteSourceSelection, viewers[index].approved else { return }
+            // Only what was offered: no hidden windows, own windows, or cameras.
+            guard viewers[index].approved, remoteCatalog.contains(where: { $0.source == source }) else { return }
             select(source)
         case .automationStatus(let status):
             viewers[index].automation = status
         case .replyMirror(let reply):
-            if settings.showRepliesOnSource { lastReply = reply }
+            if settings.showRepliesOnSource, viewers[index].approved { lastReply = reply }
         default:
             break
         }
@@ -213,13 +235,51 @@ final class SourceEngine {
 
     func setSharing(_ enabled: Bool) {
         isSharingEnabled = enabled
+        if enabled {
+            pauseReason = nil
+            if case .error = captureState { captureState = .idle }
+        }
         reconcile()
+    }
+
+    /// "Try Again" after a capture error.
+    func retryCapture() {
+        captureState = .idle
+        runningSource = nil
+        runningConfig = nil
+        capture.invalidateFilter()
+        Task {
+            await refreshCatalog()
+            reconcile()
+        }
+    }
+
+    /// Pointer / own-window settings changed: rebuild the capture with them.
+    func captureSettingsChanged() {
+        capture.invalidateFilter()
+        lastFingerprints.removeAll()
+        if runningSource != nil {
+            runningSource = nil
+            runningConfig = nil
+        }
+        Task {
+            await refreshCatalog()
+            reconcile()
+        }
+    }
+
+    /// "Let the Studio choose what's shared" changed.
+    func remoteSelectionSettingChanged() {
+        lastBroadcast.removeAll()
+        broadcastStatus()
+        for viewer in viewers where viewer.approved { sendCatalog(to: viewer.connection) }
     }
 
     func toggleSharing() { setSharing(!isSharingEnabled) }
 
     func select(_ source: CaptureSourceID) {
         settings.captureSource = source
+        pauseReason = nil
         current = catalog.first { $0.source == source }
         lastFingerprints.removeAll()
         capture.invalidateFilter()
@@ -287,6 +347,8 @@ final class SourceEngine {
         let restart = runningSource != source
         runningSource = source
         runningConfig = config
+        captureGeneration += 1
+        let generation = captureGeneration
         if restart { captureState = .starting }
         let capture = self.capture
         let fanout = self.fanout
@@ -298,14 +360,15 @@ final class SourceEngine {
                 if restart || !capture.isRunning {
                     fanout.resetStream()
                     let descriptor = try await capture.start(source: source, config: config, excludeOwnApp: exclude)
-                    self?.current = descriptor
+                    if self?.captureGeneration == generation { self?.current = descriptor }
                 } else {
                     try await capture.update(config: config)
                 }
-                guard let self, self.runningSource == source else { return }
+                guard let self, self.captureGeneration == generation, self.runningSource == source else { return }
                 self.captureState = .live
             } catch {
-                guard let self else { return }
+                // A newer start/stop superseded this one; leave its state alone.
+                guard let self, self.captureGeneration == generation else { return }
                 self.runningSource = nil
                 self.runningConfig = nil
                 if case CaptureError.permissionDenied = error {
@@ -327,6 +390,7 @@ final class SourceEngine {
         }
         runningSource = nil
         runningConfig = nil
+        captureGeneration += 1
         let capture = self.capture
         let fanout = self.fanout
         let previous = captureChain
@@ -339,13 +403,23 @@ final class SourceEngine {
         previewLayer.sampleBufferRenderer.flush()
     }
 
+    /// Capture stopped on its own. Never widen what's shared (e.g. from a closed
+    /// window to the whole display): pause and let the Source user decide.
     private func captureInterrupted(_ error: Error?) {
         runningSource = nil
         runningConfig = nil
-        // The window closed or the display went away: fall back to the main display.
-        if settings.captureSource?.kind == .window {
-            settings.captureSource = nil
+        captureGeneration += 1
+        capture.invalidateFilter()
+        let stoppedByUser = (error as NSError?).map { $0.domain == SCStreamErrorDomain && $0.code == SCStreamError.Code.userStopped.rawValue } ?? false
+        if stoppedByUser {
+            pauseReason = "Sharing was stopped from the macOS menu bar."
+        } else if settings.captureSource?.kind == .window {
+            pauseReason = "The shared window closed. Choose what to share, then resume."
+        } else {
+            pauseReason = "What was being shared isn't available anymore. Choose what to share, then resume."
         }
+        isSharingEnabled = false
+        captureState = .idle
         Task {
             await refreshCatalog()
             reconcile()
@@ -365,7 +439,7 @@ final class SourceEngine {
             message = "Screen Recording permission is needed on the shared Mac."
         } else if !isSharingEnabled {
             state = .paused
-            message = "Sharing is paused on the shared Mac."
+            message = pauseReason ?? "Sharing is paused on the shared Mac."
         } else if isLockPaused {
             state = .paused
             message = "The shared Mac is locked."
@@ -378,7 +452,13 @@ final class SourceEngine {
             default: state = .live
             }
         }
-        return SourceStatus(state: state, capture: current, message: message, allowsRemoteSourceSelection: settings.allowRemoteSourceSelection)
+        // Nothing about what's on screen (titles) until the viewer is approved.
+        return SourceStatus(
+            state: state,
+            capture: viewer.approved ? current : nil,
+            message: message,
+            allowsRemoteSourceSelection: viewer.approved && settings.allowRemoteSourceSelection
+        )
     }
 
     private func sendStatus(to connection: PeerConnection) {
@@ -431,6 +511,11 @@ final class SourceEngine {
                     connection.send(.control(.snapshotFailed(id: request.id, reason: "Couldn't encode the snapshot.")))
                     return
                 }
+                // Sharing may have been paused (or the viewer dropped) while capturing.
+                guard self.isActive, self.viewers.contains(where: { $0.id == viewer.id && $0.approved }) else {
+                    connection.send(.control(.snapshotFailed(id: request.id, reason: "Sharing is paused on the shared Mac.")))
+                    return
+                }
                 if let threshold = request.skipIfUnchangedBelow, let fingerprint, let previousFingerprint,
                    fingerprint.difference(from: previousFingerprint) < threshold {
                     connection.send(.control(.snapshotUnchanged(id: request.id)))
@@ -453,7 +538,14 @@ final class SourceEngine {
 
     /// Captures right away (used when the note panel opens, so the panel itself
     /// is never in the picture and the moment is preserved).
+    /// Whether a push can go anywhere right now (sharing on, someone approved watching).
+    var canPush: Bool { isActive && viewers.contains(where: \.approved) }
+
     func prepareNotePush() async {
+        guard canPush else {
+            preparedPush = nil
+            return
+        }
         preparedPush = try? await captureStill()
     }
 
@@ -497,6 +589,18 @@ final class SourceEngine {
                 throw CaptureError.snapshotFailed("encoding failed")
             }
             let fingerprint = ImageCodec.fingerprint(image)
+            // Re-check after the async capture: paused or unapproved means nothing is sent.
+            guard isActive else {
+                let feedback = PushFeedback(date: Date(), recipients: [], note: noteValue, error: "Sharing is paused.")
+                lastPush = feedback
+                return feedback
+            }
+            let recipients = viewers.filter(\.approved)
+            guard !recipients.isEmpty else {
+                let feedback = PushFeedback(date: Date(), recipients: [], note: noteValue, error: "No Studio is connected.")
+                lastPush = feedback
+                return feedback
+            }
             for viewer in recipients {
                 let header = SnapshotHeader(
                     id: UUID(), trigger: .sourcePush, note: noteValue,

@@ -45,11 +45,8 @@ final class AppModel {
 
         connections.onEstablished = { [weak self] connection in
             guard let self else { return }
-            switch self.settings.role {
-            case .source: if connection.direction == .incoming { self.source.attach(connection) }
-            case .studio: if connection.direction == .outgoing { self.studio.attach(connection) }
-            case nil: break
-            }
+            // Route by the running role (also set during onboarding, before `settings.role`).
+            self.route(connection)
             if connection.newlyPaired, let peer = connection.peer {
                 self.toasts.show("Paired with \(peer.name)", systemImage: "checkmark.seal.fill")
             }
@@ -58,6 +55,7 @@ final class AppModel {
             self?.source.detach(connection)
             self?.studio.detach(connection)
         }
+        source.onDenySessions = { [weak self] peerID in self?.connections.denySessions(from: peerID) }
         hotkeys.model = self
     }
 
@@ -84,7 +82,17 @@ final class AppModel {
         case .studio:
             source.deactivate()
         }
+        // Sessions established during onboarding are handed to the engine now.
+        for connection in connections.establishedConnections { route(connection) }
         hotkeys.registerAll()
+    }
+
+    private func route(_ connection: PeerConnection) {
+        switch connections.role {
+        case .source: if connection.direction == .incoming { source.attach(connection) }
+        case .studio: if connection.direction == .outgoing { studio.attach(connection) }
+        case nil: break
+        }
     }
 
     func switchRole(to role: AppRole) {

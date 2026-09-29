@@ -66,6 +66,8 @@ struct StageView: View {
             withAnimation(.spring(response: 0.35)) { focus.toggle() }
         }
         .clipped()
+        .onAppear { model.studio.stageAppeared() }
+        .onDisappear { model.studio.stageDisappeared() }
     }
 
     private func scheduleHide() {

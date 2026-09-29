@@ -223,6 +223,8 @@ private struct DeviceRow: View {
                 Text(connection.map(phaseText) ?? "Connecting…").font(TandemFont.caption).foregroundStyle(Theme.textSecondary)
             } else if let reconnect = model.connections.reconnectAt, model.connections.desiredSourceID == device.id {
                 Text("Reconnecting \(Formatters.relative(reconnect))").font(TandemFont.caption).foregroundStyle(Theme.textSecondary)
+            } else if model.connections.needsRepair(device.id) {
+                Text("Pair again to reconnect").font(TandemFont.caption).foregroundStyle(Theme.warning)
             } else if !device.isReachable {
                 Text("Offline").font(TandemFont.caption).foregroundStyle(Theme.textTertiary)
             } else if let link = device.primaryLink {
@@ -257,10 +259,11 @@ private struct DeviceRow: View {
                     .buttonStyle(TandemButtonStyle(.ghost, size: .small))
             }
         } else if device.isReachable {
-            Button(device.isTrusted ? "Connect" : "Pair") {
-                model.connections.connect(to: device.id)
+            let pair = !device.isTrusted || model.connections.needsRepair(device.id)
+            Button(pair ? "Pair" : "Connect") {
+                model.connections.connect(to: device.id, forcePairing: pair)
             }
-            .buttonStyle(TandemButtonStyle(device.isTrusted ? .secondary : .primary, size: .small))
+            .buttonStyle(TandemButtonStyle(pair ? .primary : .secondary, size: .small))
         }
     }
 }

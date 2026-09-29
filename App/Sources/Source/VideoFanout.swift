@@ -28,6 +28,9 @@ final class VideoFanout: @unchecked Sendable {
         var wantsVideo = false
         var quality: StreamQuality
         var needsKeyframe = true
+        /// Just started or explicitly asked: gets a keyframe right away. A viewer
+        /// that merely fell behind waits for the throttled/periodic keyframe.
+        var keyframeUrgent = true
         var lastFormat: VideoFormat?
         var inflight: [(sequence: UInt32, sentAt: Double)] = []
         var rttMillis: Double = 20
@@ -60,6 +63,8 @@ final class VideoFanout: @unchecked Sendable {
     private var framesSentWindow = 0
     private var windowStart = monotonicSeconds()
     private var lastRefreshAt = 0.0
+    private var refreshScheduled = false
+    private var lastForcedKeyframeAt = 0.0
 
     private let slotLock = NSLock()
     private var slot: PendingFrame?
@@ -109,6 +114,7 @@ final class VideoFanout: @unchecked Sendable {
             viewer.quality = quality
             if started {
                 viewer.needsKeyframe = true
+                viewer.keyframeUrgent = true
                 viewer.inflight.removeAll()
                 self.refreshIfIdle()
             }
@@ -119,6 +125,7 @@ final class VideoFanout: @unchecked Sendable {
         queue.async {
             guard let viewer = self.viewers[id] else { return }
             viewer.needsKeyframe = true
+            viewer.keyframeUrgent = true
             viewer.lastFormat = nil
             viewer.inflight.removeAll()
             self.refreshIfIdle()
@@ -144,6 +151,7 @@ final class VideoFanout: @unchecked Sendable {
             self.targets.removeAll()
             for viewer in self.viewers.values {
                 viewer.needsKeyframe = true
+                viewer.keyframeUrgent = true
                 viewer.lastFormat = nil
                 viewer.inflight.removeAll()
             }
@@ -174,11 +182,22 @@ final class VideoFanout: @unchecked Sendable {
         encode(frame)
     }
 
-    /// Re-encodes the last frame so a viewer gets a keyframe even when the screen is static.
+    /// Re-encodes the last frame so a viewer gets a keyframe even when the screen is
+    /// static. Refreshes requested in quick succession are deferred, never dropped.
     private func refreshIfIdle() {
-        guard var frame = lastFrame else { return }
+        guard lastFrame != nil else { return }
         let now = monotonicSeconds()
-        guard now - lastRefreshAt > 0.1 else { return }
+        let wait = 0.1 - (now - lastRefreshAt)
+        if wait > 0 {
+            guard !refreshScheduled else { return }
+            refreshScheduled = true
+            queue.asyncAfter(deadline: .now() + wait) { [weak self] in
+                self?.refreshScheduled = false
+                self?.refreshIfIdle()
+            }
+            return
+        }
+        guard var frame = lastFrame else { return }
         lastRefreshAt = now
         frame.presentationTime = CMClockGetTime(CMClockGetHostTimeClock())
         encode(frame)
@@ -226,6 +245,7 @@ final class VideoFanout: @unchecked Sendable {
                 encoderHeight = height
                 for viewer in viewers.values {
                     viewer.needsKeyframe = true
+                    viewer.keyframeUrgent = true
                     viewer.lastFormat = nil
                 }
             } catch {
@@ -236,7 +256,12 @@ final class VideoFanout: @unchecked Sendable {
         }
         encoder?.setFrameRate(fps)
 
-        let forceKeyframe = eligible.contains { viewers[$0]?.needsKeyframe == true }
+        // Urgent viewers (new / asked) get a keyframe now; viewers that merely fell
+        // behind get one at most once a second, so a slow viewer can't cause a storm.
+        let urgent = eligible.contains { viewers[$0]?.keyframeUrgent == true }
+        let lagging = eligible.contains { viewers[$0]?.needsKeyframe == true }
+        let forceKeyframe = urgent || (lagging && now - lastForcedKeyframeAt > 1.0)
+        if forceKeyframe { lastForcedKeyframeAt = now }
         targets[frame.presentationTime.value] = eligible
         do {
             try encoder?.encode(frame.pixelBuffer, presentationTime: frame.presentationTime, capturedAtNanos: frame.capturedAtNanos, forceKeyframe: forceKeyframe)
@@ -263,7 +288,10 @@ final class VideoFanout: @unchecked Sendable {
                 formatToSend = format
                 viewer.lastFormat = format
             }
-            if encoded.isKeyframe { viewer.needsKeyframe = false }
+            if encoded.isKeyframe {
+                viewer.needsKeyframe = false
+                viewer.keyframeUrgent = false
+            }
             viewer.inflight.append((seq, now))
             framesSentWindow += 1
             let link = viewer.link

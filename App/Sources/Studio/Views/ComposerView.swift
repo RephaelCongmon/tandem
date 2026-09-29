@@ -68,6 +68,7 @@ struct ComposerView: View {
         .onAppear { focused = true }
         .onChange(of: model.chat.editRequest) { _, id in
             guard let id else { return }
+            model.chat.beginEditing(id)
             editing = model.chat.composerAttachments.first { $0.id == id }
             model.chat.editRequest = nil
         }
@@ -82,6 +83,7 @@ struct ComposerView: View {
 
     private var hint: String {
         if model.chat.isCapturingForSend { return "Capturing the screen…" }
+        if !model.chat.applyingMarkup.isEmpty { return "Applying your edits…" }
         if model.chat.streaming != nil { return "Answering… press ⌘. to stop" }
         return "↩ to send · ⌥↩ for a new line"
     }
@@ -108,6 +110,7 @@ struct ComposerView: View {
                 }
                 ForEach(chat.composerAttachments) { item in
                     ComposerThumbnail(item: item) {
+                        chat.beginEditing(item.id)
                         editing = item
                     } onRemove: {
                         chat.removeFromComposer(item.id)
@@ -335,9 +338,15 @@ private struct MarkupEditorSheet: View {
             return
         }
         let box = (try? JSONEncoder().encode(document)).map(MarkupDocumentBox.init)
+        chat.beginApplyingMarkup(id)
         Task {
             let encoded = await Task.detached(priority: .userInitiated) { ImageCodec.jpeg(rendered, quality: 0.92) }.value
-            guard let encoded else { return }
+            guard let encoded else {
+                // Encoding failed: drop the attachment rather than risk sending the original.
+                chat.applyMarkup(to: id, rendered: Data(), width: 0, height: 0, markup: nil)
+                chat.removeFromComposer(id)
+                return
+            }
             chat.applyMarkup(to: id, rendered: encoded.data, width: encoded.width, height: encoded.height, markup: box)
         }
     }

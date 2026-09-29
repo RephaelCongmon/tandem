@@ -57,10 +57,13 @@ final class PeerConnection: Identifiable {
     private(set) var establishedAt: Date?
     private(set) var newlyPaired = false
     private(set) var snapshotProgress: SnapshotAssembler.Progress?
+    /// Set as soon as a close is requested, so replacements aren't blocked by it.
+    private(set) var isClosing = false
 
     @ObservationIgnored var onControl: ((ControlMessage) -> Void)?
     @ObservationIgnored var onSnapshot: ((ReceivedSnapshot) -> Void)?
     @ObservationIgnored var onSnapshotRejected: ((UUID, String) -> Void)?
+    @ObservationIgnored var onSnapshotProgress: ((SnapshotAssembler.Progress) -> Void)?
     /// Called on the link queue with `.videoFormat` / `.videoFrame` messages.
     @ObservationIgnored nonisolated let videoSink = Locked<((PeerMessage) -> Void)?>(nil)
     /// Called on the link queue with video acks (Source side flow control).
@@ -88,9 +91,11 @@ final class PeerConnection: Identifiable {
         link.queue.async { link.sendSnapshot(header: header, data: data) }
     }
 
-    func close(reason: String = "Disconnected") {
+    /// Closes the link. `dismiss` tells the other Mac not to reconnect on its own.
+    func close(reason: String = "Disconnected", dismiss: Bool = false) {
+        isClosing = true
         let link = self.link
-        link.queue.async { link.close(reason: reason) }
+        link.queue.async { link.close(reason: reason, dismiss: dismiss) }
     }
 
     func decidePairing(accept: Bool) {
@@ -127,6 +132,7 @@ final class PeerConnection: Identifiable {
 
     func receive(progress: SnapshotAssembler.Progress?) {
         snapshotProgress = progress
+        if let progress { onSnapshotProgress?(progress) }
     }
 
     func rejectSnapshot(_ id: UUID, reason: String) {

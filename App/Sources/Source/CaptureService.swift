@@ -177,12 +177,12 @@ final class CaptureService: NSObject, @unchecked Sendable {
         }
         #endif
         if source.kind == .camera {
-            let camera = try await CameraCapture.start(deviceID: source.id, queue: outputQueue) { [weak self] sample, pixel in
+            let camera = try await CameraCapture.start(deviceID: source.id, queue: outputQueue, config: config) { [weak self] sample, pixel in
                 guard let self else { return }
-                self.lock.lock()
-                self.lastCameraFrame = pixel
-                self.lock.unlock()
+                self.lock.withLock { self.lastCameraFrame = pixel }
                 self.onFrame?(sample, pixel, wallClockNanos())
+            } onInterrupted: { [weak self] error in
+                self?.onInterrupted?(error)
             }
             lock.withLock {
                 self.camera = camera
@@ -209,12 +209,17 @@ final class CaptureService: NSObject, @unchecked Sendable {
     }
 
     func update(config: CaptureConfig) async throws {
-        let (stream, filter, changed) = lock.withLock { () -> (SCStream?, SCContentFilter?, Bool) in
+        let (stream, filter, camera, changed) = lock.withLock { () -> (SCStream?, SCContentFilter?, CameraCapture?, Bool) in
             let changed = self.config != config
             self.config = config
-            return (self.stream, self.filter, changed)
+            return (self.stream, self.filter, self.camera, changed)
         }
-        guard changed, let stream, let filter else { return }
+        guard changed else { return }
+        if let camera {
+            camera.apply(config)
+            return
+        }
+        guard let stream, let filter else { return }
         try await stream.updateConfiguration(streamConfiguration(for: filter, config: config))
     }
 
@@ -279,7 +284,8 @@ final class CaptureService: NSObject, @unchecked Sendable {
         }
         switch source.kind {
         case .display:
-            guard let display = content.displays.first(where: { String($0.displayID) == source.id }) ?? content.displays.first else {
+            // Never substitute a different display for the one the user chose.
+            guard let display = content.displays.first(where: { String($0.displayID) == source.id }) else {
                 throw CaptureError.sourceUnavailable
             }
             let own = excludeOwnApp ? content.applications.filter { $0.bundleIdentifier == Bundle.main.bundleIdentifier } : []
@@ -399,10 +405,55 @@ final class CameraCapture: NSObject, AVCaptureVideoDataOutputSampleBufferDelegat
     let descriptor: CaptureSourceDescriptor
     private let session = AVCaptureSession()
     private let handler: (CMSampleBuffer, CVPixelBuffer) -> Void
+    private let onInterrupted: (Error?) -> Void
+    private var device: AVCaptureDevice?
+    private var observers: [NSObjectProtocol] = []
 
-    private init(descriptor: CaptureSourceDescriptor, handler: @escaping (CMSampleBuffer, CVPixelBuffer) -> Void) {
+    private init(descriptor: CaptureSourceDescriptor, handler: @escaping (CMSampleBuffer, CVPixelBuffer) -> Void, onInterrupted: @escaping (Error?) -> Void) {
         self.descriptor = descriptor
         self.handler = handler
+        self.onInterrupted = onInterrupted
+    }
+
+    deinit {
+        observers.forEach(NotificationCenter.default.removeObserver)
+    }
+
+    /// Picks a preset and frame rate for the requested stream quality, so a
+    /// Bluetooth viewer gets a small, slow stream instead of full-size frames.
+    func apply(_ config: CaptureConfig) {
+        session.beginConfiguration()
+        let preset: AVCaptureSession.Preset
+        switch config.maxDimension {
+        case ..<900: preset = .vga640x480
+        case ..<1400: preset = .hd1280x720
+        case ..<2000: preset = .hd1920x1080
+        default: preset = .high
+        }
+        if session.canSetSessionPreset(preset) { session.sessionPreset = preset }
+        session.commitConfiguration()
+        guard let device, (try? device.lockForConfiguration()) != nil else { return }
+        defer { device.unlockForConfiguration() }
+        let wanted = Double(max(1, config.fps))
+        let supported = device.activeFormat.videoSupportedFrameRateRanges
+        if let range = supported.first(where: { $0.minFrameRate <= wanted && wanted <= $0.maxFrameRate }) ?? supported.first {
+            let fps = min(max(wanted, range.minFrameRate), range.maxFrameRate)
+            device.activeVideoMinFrameDuration = CMTime(value: 1, timescale: CMTimeScale(fps.rounded()))
+        }
+    }
+
+    private func observeInterruptions() {
+        let center = NotificationCenter.default
+        observers.append(center.addObserver(forName: AVCaptureSession.runtimeErrorNotification, object: session, queue: nil) { [weak self] note in
+            self?.onInterrupted(note.userInfo?[AVCaptureSessionErrorKey] as? Error)
+        })
+        observers.append(center.addObserver(forName: AVCaptureSession.wasInterruptedNotification, object: session, queue: nil) { [weak self] _ in
+            self?.onInterrupted(nil)
+        })
+        observers.append(center.addObserver(forName: AVCaptureDevice.wasDisconnectedNotification, object: nil, queue: nil) { [weak self] note in
+            guard let self, let device = note.object as? AVCaptureDevice, device.uniqueID == self.device?.uniqueID else { return }
+            self.onInterrupted(nil)
+        })
     }
 
     static func discovery() -> AVCaptureDevice.DiscoverySession {
@@ -427,7 +478,13 @@ final class CameraCapture: NSObject, AVCaptureVideoDataOutputSampleBufferDelegat
         }
     }
 
-    static func start(deviceID: String, queue: DispatchQueue, handler: @escaping (CMSampleBuffer, CVPixelBuffer) -> Void) async throws -> CameraCapture {
+    static func start(
+        deviceID: String,
+        queue: DispatchQueue,
+        config: CaptureConfig,
+        handler: @escaping (CMSampleBuffer, CVPixelBuffer) -> Void,
+        onInterrupted: @escaping (Error?) -> Void
+    ) async throws -> CameraCapture {
         switch AVCaptureDevice.authorizationStatus(for: .video) {
         case .authorized: break
         case .notDetermined:
@@ -435,7 +492,8 @@ final class CameraCapture: NSObject, AVCaptureVideoDataOutputSampleBufferDelegat
         default:
             throw CaptureError.cameraPermissionDenied
         }
-        guard let device = discovery().devices.first(where: { $0.uniqueID == deviceID }) ?? AVCaptureDevice.default(for: .video) else {
+        // The chosen camera only — never a different one.
+        guard let device = discovery().devices.first(where: { $0.uniqueID == deviceID }) else {
             throw CaptureError.sourceUnavailable
         }
         let dimensions = CMVideoFormatDescriptionGetDimensions(device.activeFormat.formatDescription)
@@ -446,8 +504,11 @@ final class CameraCapture: NSObject, AVCaptureVideoDataOutputSampleBufferDelegat
             pixelWidth: Int(dimensions.width),
             pixelHeight: Int(dimensions.height)
         )
-        let capture = CameraCapture(descriptor: descriptor, handler: handler)
+        let capture = CameraCapture(descriptor: descriptor, handler: handler, onInterrupted: onInterrupted)
         try capture.configure(device: device, queue: queue)
+        capture.device = device
+        capture.apply(config)
+        capture.observeInterruptions()
         capture.session.startRunning()
         return capture
     }
