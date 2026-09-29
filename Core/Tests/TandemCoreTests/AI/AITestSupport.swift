@@ -9,6 +9,11 @@ struct AITestStubResponse {
     var chunks: [Data] = []
     /// Keep the connection open after sending `chunks` until the client cancels.
     var hangs = false
+    /// Never send response headers; the request stays pending until the client cancels.
+    var hangsBeforeHeaders = false
+    /// End the response with this transport error after sending `chunks` (before any response
+    /// when there are no chunks).
+    var failure: URLError?
 
     static func sse(_ body: String, chunkSize: Int? = nil) -> AITestStubResponse {
         let data = Data(body.utf8)
@@ -27,6 +32,14 @@ struct AITestStubResponse {
         var allHeaders = ["Content-Type": "application/json"]
         allHeaders.merge(headers) { _, new in new }
         return AITestStubResponse(status: status, headers: allHeaders, chunks: [Data(body.utf8)])
+    }
+
+    /// A connection that never answers (until cancelled).
+    static var neverResponds: AITestStubResponse { AITestStubResponse(hangsBeforeHeaders: true) }
+
+    /// A connection that fails with `code` before any response.
+    static func transportFailure(_ code: URLError.Code) -> AITestStubResponse {
+        AITestStubResponse(failure: URLError(code))
     }
 }
 
@@ -132,6 +145,11 @@ final class AITestURLProtocol: URLProtocol, @unchecked Sendable {
             body: Self.body(of: request)
         )
         let stub = server.next(for: recorded)
+        if stub.hangsBeforeHeaders { return }
+        if let failure = stub.failure, stub.chunks.isEmpty {
+            client?.urlProtocol(self, didFailWithError: failure)
+            return
+        }
         guard let response = HTTPURLResponse(url: url, statusCode: stub.status, httpVersion: "HTTP/1.1", headerFields: stub.headers) else {
             client?.urlProtocol(self, didFailWithError: URLError(.badServerResponse))
             return
@@ -140,7 +158,15 @@ final class AITestURLProtocol: URLProtocol, @unchecked Sendable {
         for chunk in stub.chunks {
             client?.urlProtocol(self, didLoad: chunk)
         }
-        if !stub.hangs {
+        if let failure = stub.failure {
+            // Fail a moment later on this protocol's run loop; URLSession drops body bytes that
+            // are followed immediately by a failure.
+            let timer = Timer(timeInterval: 0.05, repeats: false) { [weak self] _ in
+                guard let self else { return }
+                self.client?.urlProtocol(self, didFailWithError: failure)
+            }
+            RunLoop.current.add(timer, forMode: .common)
+        } else if !stub.hangs {
             client?.urlProtocolDidFinishLoading(self)
         }
     }
@@ -204,3 +230,98 @@ extension Array where Element == AIStreamEvent {
 
 /// A small valid PNG-ish payload (bytes don't matter to the clients).
 let aiTestImage = AIImage(data: Data((0..<3000).map { UInt8($0 % 251) }), mimeType: "image/png", width: 40, height: 30)
+
+extension AITestStubServer {
+    var anthropic: AnthropicClient { AnthropicClient(endpoint: endpoint(.anthropic), session: session) }
+    var openAI: OpenAIResponsesClient { OpenAIResponsesClient(endpoint: endpoint(.openAI), session: session) }
+    /// A keyless OpenAI-compatible client (local servers usually need no key).
+    var chat: ChatCompletionsClient { ChatCompletionsClient(endpoint: endpoint(.openAICompatible, apiKey: ""), session: session) }
+
+    /// The client for `kind`, built through ``AIClientFactory``.
+    func client(_ kind: AIProviderKind, apiKey: String = "test-key", trailingSlash: Bool = true) -> any AIClient {
+        AIClientFactory.make(endpoint: endpoint(kind, apiKey: apiKey, trailingSlash: trailingSlash), session: session)
+    }
+
+    /// The only request received; fails the test if there were none or several.
+    func singleRequest(file: StaticString = #filePath, line: UInt = #line) -> AITestRecordedRequest? {
+        let all = requests
+        XCTAssertEqual(all.count, 1, "request count", file: file, line: line)
+        return all.first
+    }
+}
+
+/// Polls `condition` until it holds, failing the test after `timeout` seconds.
+func aiTestWait(
+    _ description: String,
+    timeout: TimeInterval = 3,
+    file: StaticString = #filePath,
+    line: UInt = #line,
+    until condition: () -> Bool
+) async {
+    let deadline = Date().addingTimeInterval(timeout)
+    while !condition() {
+        if Date() > deadline {
+            XCTFail("Timed out waiting for \(description)", file: file, line: line)
+            return
+        }
+        try? await Task.sleep(nanoseconds: 5_000_000)
+    }
+}
+
+/// A one-turn request with a screenshot, as Tandem sends it.
+func aiTestRequest(
+    model: String,
+    effort: ReasoningEffort? = .high,
+    summary: Bool = true,
+    system: String = "You help with what's on screen."
+) -> AIRequest {
+    AIRequest(
+        model: model,
+        systemPrompt: system,
+        turns: [.user(.text("What does this dialog want?"), .image(aiTestImage))],
+        maxOutputTokens: 4096,
+        effort: effort,
+        includeReasoningSummary: summary
+    )
+}
+
+/// A minimal successful Anthropic stream.
+func aiTestAnthropicOK(model: String = "claude-opus-5-5", text: String = "OK") -> AITestStubResponse {
+    .sse(aiTestSSE([
+        ("message_start", #"{"type":"message_start","message":{"model":"\#(model)","usage":{"input_tokens":10,"output_tokens":1}}}"#),
+        ("content_block_start", #"{"type":"content_block_start","index":0,"content_block":{"type":"text","text":""}}"#),
+        ("content_block_delta", #"{"type":"content_block_delta","index":0,"delta":{"type":"text_delta","text":"\#(text)"}}"#),
+        ("content_block_stop", #"{"type":"content_block_stop","index":0}"#),
+        ("message_delta", #"{"type":"message_delta","delta":{"stop_reason":"end_turn"},"usage":{"output_tokens":2}}"#),
+        ("message_stop", #"{"type":"message_stop"}"#)
+    ]))
+}
+
+/// A minimal successful OpenAI Responses stream.
+func aiTestOpenAIOK(model: String = "gpt-6-astra", text: String = "OK") -> AITestStubResponse {
+    .sse(aiTestSSE([
+        ("response.created", #"{"type":"response.created","response":{"model":"\#(model)","status":"in_progress"}}"#),
+        ("response.output_text.delta", #"{"type":"response.output_text.delta","delta":"\#(text)"}"#),
+        ("response.completed", #"{"type":"response.completed","response":{"model":"\#(model)","status":"completed","usage":{"input_tokens":5,"output_tokens":1}}}"#)
+    ]))
+}
+
+/// A minimal successful Chat Completions stream.
+func aiTestChatOK(model: String = "local-model", text: String = "OK") -> AITestStubResponse {
+    .sse(aiTestSSE([
+        (nil, #"{"model":"\#(model)","choices":[{"index":0,"delta":{"role":"assistant","content":"\#(text)"}}]}"#),
+        (nil, #"{"model":"\#(model)","choices":[{"index":0,"delta":{},"finish_reason":"stop"}]}"#),
+        (nil, "[DONE]")
+    ]))
+}
+
+/// Whether a decoded JSON tree contains `key` at any depth.
+func aiTestJSONContainsKey(_ value: Any, _ key: String) -> Bool {
+    if let object = value as? [String: Any] {
+        return object.keys.contains(key) || object.values.contains { aiTestJSONContainsKey($0, key) }
+    }
+    if let array = value as? [Any] {
+        return array.contains { aiTestJSONContainsKey($0, key) }
+    }
+    return false
+}

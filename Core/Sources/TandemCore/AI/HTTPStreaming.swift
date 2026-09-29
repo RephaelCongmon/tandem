@@ -166,16 +166,23 @@ enum HTTPStreaming {
             try await delegate.start(task)
         } onCancel: {
             task.cancel()
+            // Don't depend on URLSession reporting the cancellation (it may never have started).
+            delegate.cancelPendingResponse()
         }
 
         guard (200..<300).contains(response.statusCode) else {
             let errorBody = await readPrefix(of: body, limit: maxErrorBodyBytes)
             task.cancel()
             let failure = AIHTTPFailure(response: response, body: errorBody)
-            aiLogger.error("HTTP \(failure.status, privacy: .public) from \(request.url?.host ?? "?", privacy: .public) \(request.url?.path ?? "", privacy: .public): \(failure.message)")
+            logFailure(failure, for: request)
             throw failure
         }
         return HTTPStreamingResponse(response: response, body: body, task: task)
+    }
+
+    private static func logFailure(_ failure: AIHTTPFailure, for request: URLRequest) {
+        let message = AILogRedaction.redact(failure.message, secrets: AILogRedaction.secrets(in: request))
+        aiLogger.error("HTTP \(failure.status, privacy: .public) from \(request.url?.host ?? "?", privacy: .public) \(request.url?.path ?? "", privacy: .public): \(message, privacy: .private)")
     }
 
     /// Performs a small non-streaming request (e.g. listing models) and returns the body.
@@ -187,7 +194,7 @@ enum HTTPStreaming {
         }
         guard (200..<300).contains(http.statusCode) else {
             let failure = AIHTTPFailure(response: http, body: data.prefix(maxErrorBodyBytes))
-            aiLogger.error("HTTP \(failure.status, privacy: .public) from \(request.url?.host ?? "?", privacy: .public) \(request.url?.path ?? "", privacy: .public): \(failure.message)")
+            logFailure(failure, for: request)
             throw failure
         }
         return data
@@ -250,6 +257,9 @@ private final class HTTPStreamingTaskDelegate: NSObject, URLSessionDataDelegate,
     private let body: AsyncThrowingStream<Data, Error>.Continuation
     private let lock = NSLock()
     private var pendingResponse: CheckedContinuation<HTTPURLResponse, Error>?
+    /// The first response outcome. Kept so an outcome that arrives before ``start(_:)`` registers
+    /// its continuation (e.g. a cancellation racing the start) resumes it instead of being lost.
+    private var outcome: Result<HTTPURLResponse, Error>?
 
     init(body: AsyncThrowingStream<Data, Error>.Continuation) {
         self.body = body
@@ -258,13 +268,29 @@ private final class HTTPStreamingTaskDelegate: NSObject, URLSessionDataDelegate,
     /// Resumes `task` and waits for its response headers (or failure).
     func start(_ task: URLSessionDataTask) async throws -> HTTPURLResponse {
         try await withCheckedThrowingContinuation { continuation in
-            lock.withLock { pendingResponse = continuation }
-            task.resume()
+            let early = lock.withLock { () -> Result<HTTPURLResponse, Error>? in
+                if let outcome { return outcome }
+                pendingResponse = continuation
+                return nil
+            }
+            if let early {
+                continuation.resume(with: early)
+            } else {
+                task.resume()
+            }
         }
     }
 
+    /// Fails a pending (or future) ``start(_:)`` with `URLError(.cancelled)`.
+    func cancelPendingResponse() {
+        resolveResponse(.failure(URLError(.cancelled)))
+    }
+
+    /// Records the response outcome and resumes the waiter; only the first outcome counts.
     private func resolveResponse(_ result: Result<HTTPURLResponse, Error>) {
         let continuation = lock.withLock { () -> CheckedContinuation<HTTPURLResponse, Error>? in
+            guard outcome == nil else { return nil }
+            outcome = result
             defer { pendingResponse = nil }
             return pendingResponse
         }
@@ -318,8 +344,11 @@ enum AIEventStream {
 
     /// Runs `operation` in a task that is cancelled when the returned stream terminates (consumer
     /// cancelled or dropped it). Every thrown error is mapped to ``AIError``; cancellation surfaces
-    /// as ``AIError/cancelled``.
-    static func make(_ operation: @escaping @Sendable (Continuation) async throws -> Void) -> AsyncThrowingStream<AIStreamEvent, Error> {
+    /// as ``AIError/cancelled``. `secrets` (the API key) are masked if an error message echoes them.
+    static func make(
+        redacting secrets: [String] = [],
+        _ operation: @escaping @Sendable (Continuation) async throws -> Void
+    ) -> AsyncThrowingStream<AIStreamEvent, Error> {
         AsyncThrowingStream { continuation in
             let task = Task {
                 do {
@@ -328,13 +357,55 @@ enum AIEventStream {
                 } catch {
                     let mapped = Task.isCancelled ? AIError.cancelled : AIError.wrapping(error)
                     if mapped != .cancelled {
-                        aiLogger.error("AI stream failed: \(mapped.localizedDescription)")
+                        let description = AILogRedaction.redact(mapped.localizedDescription, secrets: secrets)
+                        aiLogger.error("AI stream failed: \(description, privacy: .private)")
                     }
                     continuation.finish(throwing: mapped)
                 }
             }
             continuation.onTermination = { _ in task.cancel() }
         }
+    }
+}
+
+// MARK: - Log redaction
+
+/// Masks credentials and encoded image data in text headed for the log. Provider error messages
+/// can echo request fields (a mistyped key, an invalid image URL), so they're scrubbed first.
+enum AILogRedaction {
+    /// Runs of base64-alphabet characters at least this long are treated as binary payloads.
+    static let longDataRunLength = 64
+
+    static func redact(_ text: String, secrets: [String] = []) -> String {
+        var result = text
+        for secret in secrets where secret.count >= 4 {
+            result = result.replacingOccurrences(of: secret, with: "[redacted]")
+        }
+        let patterns: [(pattern: String, template: String)] = [
+            (#"(?i)\bbearer\s+[A-Za-z0-9._~+/=\-]+"#, "Bearer [redacted]"),
+            (#"\bsk-[A-Za-z0-9_*\-]{4,}"#, "sk-[redacted]"),
+            (#"(?i)base64,[A-Za-z0-9+/=_\-]+"#, "base64,[redacted]"),
+            ("[A-Za-z0-9+/=_\\-]{\(longDataRunLength),}", "[redacted data]")
+        ]
+        for (pattern, template) in patterns {
+            guard let regex = try? NSRegularExpression(pattern: pattern) else { continue }
+            let range = NSRange(result.startIndex..., in: result)
+            result = regex.stringByReplacingMatches(in: result, range: range, withTemplate: template)
+        }
+        return result
+    }
+
+    /// Credential header values of `request` (the bare key for `Authorization: Bearer …`).
+    static func secrets(in request: URLRequest) -> [String] {
+        var secrets: [String] = []
+        if let key = request.value(forHTTPHeaderField: "x-api-key") { secrets.append(key) }
+        if let authorization = request.value(forHTTPHeaderField: "Authorization") {
+            secrets.append(authorization)
+            if authorization.lowercased().hasPrefix("bearer ") {
+                secrets.append(String(authorization.dropFirst("bearer ".count)).trimmingCharacters(in: .whitespaces))
+            }
+        }
+        return secrets.sorted { $0.count > $1.count }
     }
 }
 

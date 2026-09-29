@@ -3,12 +3,12 @@ import Foundation
 /// Streaming client for OpenAI-compatible Chat Completions servers (LM Studio, Ollama, vLLM,
 /// llama.cpp, proxies): `POST /chat/completions` with `stream: true`.
 ///
-/// Optional fields (`stream_options`, `reasoning_effort`) are dropped and the request retried if
-/// the server answers HTTP 400. Servers that ignore `stream` and return one JSON body are
+/// Optional fields (`stream_options`, `reasoning_effort`) are dropped and the request retried once
+/// if the server answers HTTP 400. Servers that ignore `stream` and return one JSON body are
 /// handled too.
 public struct ChatCompletionsClient: AIClient {
     /// Maximum number of feature-degrading retries per request.
-    static let maxDegradeRetries = 2
+    static let maxDegradeRetries = 1
     /// Largest non-streamed JSON body accepted from servers that ignore `stream: true`.
     static let maxJSONBodyBytes = 16 * 1024 * 1024
 
@@ -26,7 +26,7 @@ public struct ChatCompletionsClient: AIClient {
     // MARK: Streaming
 
     public func stream(_ request: AIRequest) -> AsyncThrowingStream<AIStreamEvent, Error> {
-        AIEventStream.make { continuation in
+        AIEventStream.make(redacting: [endpoint.apiKey.trimmingCharacters(in: .whitespacesAndNewlines)]) { continuation in
             try await run(request, continuation: continuation)
         }
     }
@@ -140,23 +140,13 @@ public struct ChatCompletionsClient: AIClient {
         return messages
     }
 
-    /// Decides whether an HTTP 400 can be retried with optional fields removed: a message naming
-    /// `stream_options` or `reasoning_effort` drops that field; any other 400 drops both (once).
+    /// Decides whether an HTTP 400 can be retried with the optional fields removed. Compatible
+    /// servers word their rejections too inconsistently to single out a field, so the one retry
+    /// drops `stream_options` and `reasoning_effort` together.
+    /// - Returns: The options for the retry, or `nil` when nothing optional is left to drop.
     static func degrade(_ options: ChatWireOptions, status: Int, message: String) -> ChatWireOptions? {
-        guard status == 400 else { return nil }
-        let text = message.lowercased()
-        var next = options
-        if options.streamOptions, text.contains("stream_options") {
-            next.streamOptions = false
-        } else if options.reasoningEffort, text.contains("reasoning_effort") || text.contains("reasoning") {
-            next.reasoningEffort = false
-        } else if options.streamOptions || options.reasoningEffort {
-            next.streamOptions = false
-            next.reasoningEffort = false
-        } else {
-            return nil
-        }
-        return next
+        guard status == 400, options.streamOptions || options.reasoningEffort else { return nil }
+        return ChatWireOptions(streamOptions: false, reasoningEffort: false)
     }
 
     // MARK: Models
