@@ -66,6 +66,11 @@ struct ComposerView: View {
                 .environment(model)
         }
         .onAppear { focused = true }
+        .onChange(of: model.chat.editRequest) { _, id in
+            guard let id else { return }
+            editing = model.chat.composerAttachments.first { $0.id == id }
+            model.chat.editRequest = nil
+        }
     }
 
     private var placeholder: String {

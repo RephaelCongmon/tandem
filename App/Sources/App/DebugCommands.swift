@@ -1,0 +1,89 @@
+#if DEBUG
+import AppKit
+import Foundation
+import os
+import TandemCore
+
+/// Debug-only remote control for automated end-to-end checks. A command is a
+/// distributed notification named `com.rofel.tandem.debug` whose object is
+/// `"<profile>|<command>|<argument>"`; only the matching profile reacts.
+/// Never compiled into Release builds.
+@MainActor
+enum DebugCommands {
+    static let notificationName = Notification.Name("com.rofel.tandem.debug")
+    private static var observer: NSObjectProtocol?
+
+    static func install(model: AppModel) {
+        guard observer == nil else { return }
+        observer = DistributedNotificationCenter.default().addObserver(forName: notificationName, object: nil, queue: .main) { note in
+            guard let raw = note.object as? String else { return }
+            let parts = raw.split(separator: "|", maxSplits: 2, omittingEmptySubsequences: false).map(String.init)
+            guard parts.count >= 2, parts[0] == (AppEnvironment.profile ?? "") else { return }
+            let argument = parts.count > 2 ? parts[2] : ""
+            MainActor.assumeIsolated { run(parts[1], argument: argument, model: model) }
+        }
+    }
+
+    private static func run(_ command: String, argument: String, model: AppModel) {
+        switch command {
+        case "ask":
+            model.chat.composerText = argument
+            model.chat.sendFromComposer()
+        case "captureAndAsk":
+            model.studio.captureAndAsk()
+        case "captureToComposer":
+            model.studio.captureToComposer()
+        case "editFirstAttachment":
+            model.chat.editRequest = model.chat.composerAttachments.first?.id
+        case "push":
+            Task { model.toasts.showPush(await model.source.pushSnapshot(note: argument.isEmpty ? nil : argument)) }
+        case "noteSheet":
+            QuickNotePanelController.shared.present(model: model)
+        case "pause":
+            model.source.setSharing(false)
+        case "resume":
+            model.source.setSharing(true)
+        case "auto":
+            model.settings.autoCaptureInterval = Double(argument) ?? 10
+            model.settings.autoCaptureEnabled = true
+            model.studio.restartAutomation()
+        case "autoOff":
+            model.settings.autoCaptureEnabled = false
+            model.studio.restartAutomation()
+        case "settings":
+            model.openSettingsAction?()
+        case "newThread":
+            model.chat.newThread()
+        case "toast":
+            model.toasts.show(argument, systemImage: "sparkles")
+        case "dump":
+            dump(model: model)
+        case "quit":
+            NSApp.terminate(nil)
+        default:
+            NSLog("Tandem debug: unknown command \(command)")
+        }
+    }
+
+    /// Writes a state snapshot to the container's tmp directory.
+    private static func dump(model: AppModel) {
+        let studio = model.studio
+        let source = model.source
+        var lines: [String] = []
+        lines.append("role=\(model.settings.role?.rawValue ?? "nil")")
+        lines.append("connections=\(model.connections.connections.map { "\($0.peer?.name ?? "?"):\($0.phase):\($0.linkKind.rawValue):rtt=\($0.stats.rttMillis ?? -1)" })")
+        lines.append("studio.isConnected=\(studio.isConnected) liveState=\(studio.liveState) hasVideo=\(studio.hasVideo) stageVisible=\(studio.isStageVisible) preview=\(studio.livePreviewEnabled)")
+        lines.append("studio.sourceStatus=\(String(describing: studio.sourceStatus))")
+        lines.append("studio.liveStats=\(studio.liveStats)")
+        lines.append("source.viewers=\(source.viewers.map { "\($0.name) approved=\($0.approved) watching=\($0.isWatching) request=\(String(describing: $0.streamRequest))" })")
+        lines.append("source.captureState=\(source.captureState) streaming=\(source.isStreaming) stats=\(source.streamStats)")
+        lines.append("chat.threads=\(model.chat.threads.count) streaming=\(model.chat.streaming != nil) banner=\(model.chat.banner ?? "-")")
+        lines.append("auto=\(model.settings.autoCaptureEnabled) last=\(studio.lastAutoResult ?? "-")")
+        // Logged (not written to the container) so tools can read it without
+        // triggering the "access data from other apps" privacy prompt.
+        let logger = Logger(subsystem: "com.rofel.tandem", category: "Debug")
+        let profile = AppEnvironment.profile ?? "default"
+        for line in lines { logger.notice("TANDEM-STATE[\(profile, privacy: .public)] \(line, privacy: .public)") }
+    }
+}
+#endif

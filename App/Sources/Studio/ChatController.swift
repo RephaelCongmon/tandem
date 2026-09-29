@@ -61,6 +61,8 @@ final class ChatController {
     private(set) var isCapturingForSend = false
     private(set) var banner: String?
     var searchText = ""
+    /// Set to open the markup editor for a composer attachment.
+    var editRequest: UUID?
 
     @ObservationIgnored let snapshots: SnapshotStore
     @ObservationIgnored private let store: ThreadStore

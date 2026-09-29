@@ -66,6 +66,7 @@ final class AppModel {
         let arguments = UserDefaults.standard
         if let raw = arguments.string(forKey: "TandemRole"), let role = AppRole(rawValue: raw) { settings.role = role }
         if arguments.bool(forKey: "TandemTestPattern") { settings.captureSource = TestPatternGenerator.sourceID }
+        DebugCommands.install(model: self)
         #endif
         applyAppearance()
         if let role = settings.role { activate(role) }

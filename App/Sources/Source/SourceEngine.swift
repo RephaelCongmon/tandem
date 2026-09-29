@@ -536,11 +536,23 @@ final class SourceEngine {
 
     // MARK: Screen lock
 
+    /// Whether the login session's screen is locked right now.
+    static var isScreenLocked: Bool {
+        guard let session = CGSessionCopyCurrentDictionary() as? [String: Any] else { return false }
+        return (session["CGSSessionScreenIsLocked"] as? Bool) ?? false
+    }
+
     private func observeLockState() {
+        #if DEBUG
+        let ignoreLock = UserDefaults.standard.bool(forKey: "TandemIgnoreLock")
+        #else
+        let ignoreLock = false
+        #endif
+        if settings.pauseWhenLocked, !ignoreLock, Self.isScreenLocked { isLockPaused = true }
         let center = DistributedNotificationCenter.default()
         observers.append(center.addObserver(forName: Notification.Name("com.apple.screenIsLocked"), object: nil, queue: .main) { [weak self] _ in
             MainActor.assumeIsolated {
-                guard let self, self.settings.pauseWhenLocked else { return }
+                guard let self, self.settings.pauseWhenLocked, !ignoreLock else { return }
                 self.isLockPaused = true
                 self.reconcile()
             }

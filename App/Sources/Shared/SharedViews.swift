@@ -30,6 +30,7 @@ enum Formatters {
     }
 
     static func relative(_ date: Date) -> String {
+        if abs(date.timeIntervalSinceNow) < 45 { return "now" }
         let formatter = RelativeDateTimeFormatter()
         formatter.unitsStyle = .short
         return formatter.localizedString(for: date, relativeTo: Date())
@@ -148,6 +149,13 @@ struct VideoLayerView: NSViewRepresentable {
             super.init(frame: frameRect)
             wantsLayer = true
             layer?.backgroundColor = NSColor.black.cgColor
+            // Keep the video behind SwiftUI overlays drawn in sibling layers.
+            layer?.zPosition = -100
+        }
+
+        override func viewDidMoveToSuperview() {
+            super.viewDidMoveToSuperview()
+            layer?.zPosition = -100
         }
 
         required init?(coder: NSCoder) { fatalError("init(coder:) is not supported") }

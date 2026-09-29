@@ -117,3 +117,10 @@ final class ConversationTests: XCTestCase {
         XCTAssertFalse(store.contains(ids.first!))
     }
 }
+
+final class PreviewTextTests: XCTestCase {
+    func testMarkdownIsStrippedForPreviews() {
+        let markdown = "## What I see\n\nYou sent **1 screenshot**.\n\n```swift\nlet x = 1\n```\n- A `clock`\n| a | b |\n|---|---|"
+        XCTAssertEqual(ChatThread.plainText(fromMarkdown: markdown), "What I see You sent 1 screenshot. A clock")
+    }
+}

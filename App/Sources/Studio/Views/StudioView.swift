@@ -15,7 +15,7 @@ struct StudioView: View {
             detail
         }
         .toolbar { toolbarContent }
-        .background(WindowVisibilityReader { visible in model.studio.isStageVisible = visible })
+        .background(WindowVisibilityReader { visible in model.studio.isStageVisible = visible || AppEnvironment.ignoreOcclusion })
     }
 
     @ViewBuilder

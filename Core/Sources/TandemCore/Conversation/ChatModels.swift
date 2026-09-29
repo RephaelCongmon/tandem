@@ -122,14 +122,40 @@ public struct ChatThread: Codable, Sendable, Hashable, Identifiable {
 
     public var attachmentCount: Int { messages.reduce(0) { $0 + $1.attachments.count } }
 
-    /// Last user- or assistant-authored text, for sidebar previews.
+    /// Last user- or assistant-authored text as plain text, for sidebar previews.
     public var preview: String {
         for message in messages.reversed() where message.role != .notice {
-            let text = message.text.trimmingCharacters(in: .whitespacesAndNewlines)
+            let text = Self.plainText(fromMarkdown: message.text)
             if !text.isEmpty { return text }
             if !message.attachments.isEmpty { return "Screenshot" }
         }
         return "No messages yet"
+    }
+
+    /// Strips common Markdown syntax so previews read naturally.
+    public static func plainText(fromMarkdown markdown: String) -> String {
+        var lines: [String] = []
+        var inFence = false
+        for rawLine in markdown.split(whereSeparator: \.isNewline) {
+            var line = rawLine.trimmingCharacters(in: .whitespaces)
+            if line.hasPrefix("```") || line.hasPrefix("~~~") {
+                inFence.toggle()
+                continue
+            }
+            if inFence || line.isEmpty { continue }
+            if line.allSatisfy({ "-*_=|: ".contains($0) }) { continue }
+            while let first = line.first, "#>".contains(first) { line.removeFirst() }
+            if line.hasPrefix("- [ ] ") || line.hasPrefix("- [x] ") { line.removeFirst(6) }
+            if let first = line.first, "-*+".contains(first), line.dropFirst().first == " " { line.removeFirst(2) }
+            line = line.replacingOccurrences(of: "**", with: "")
+                .replacingOccurrences(of: "__", with: "")
+                .replacingOccurrences(of: "`", with: "")
+                .replacingOccurrences(of: "|", with: " ")
+            let trimmed = line.trimmingCharacters(in: .whitespaces)
+            if !trimmed.isEmpty { lines.append(trimmed) }
+            if lines.count >= 3 { break }
+        }
+        return lines.joined(separator: " ")
     }
 
     /// Derives a short title from the first user message.

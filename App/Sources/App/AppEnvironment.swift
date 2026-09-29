@@ -62,6 +62,15 @@ enum AppEnvironment {
         #endif
     }
 
+    /// Development-only: keep streaming even when the Studio window is covered.
+    static var ignoreOcclusion: Bool {
+        #if DEBUG
+        return UserDefaults.standard.bool(forKey: "TandemIgnoreOcclusion")
+        #else
+        return false
+        #endif
+    }
+
     /// Development-only: override the AI base URL (e.g. a local mock server).
     static var debugAIBaseURL: URL? {
         #if DEBUG

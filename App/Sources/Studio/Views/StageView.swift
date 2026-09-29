@@ -6,7 +6,8 @@ import TandemUI
 struct StageView: View {
     @Environment(AppModel.self) private var model
     @Binding var focus: Bool
-    @State private var hovering = true
+    /// Chrome is visible unless the pointer rests over the video for a moment.
+    @State private var chromeVisible = true
     @State private var hideTask: Task<Void, Never>?
 
     var body: some View {
@@ -21,7 +22,7 @@ struct StageView: View {
             if model.studio.isConnected {
                 StageHUD()
                     .padding(Spacing.m)
-                    .opacity(hovering || model.studio.liveState != .live ? 1 : 0)
+                    .opacity(chromeVisible || model.studio.liveState != .live ? 1 : 0)
             }
         }
         .overlay(alignment: .topTrailing) {
@@ -35,14 +36,14 @@ struct StageView: View {
                     .tandemGlassCapsule(interactive: true)
                 }
                 .padding(Spacing.m)
-                .opacity(hovering || model.studio.liveState != .live ? 1 : 0)
+                .opacity(chromeVisible || model.studio.liveState != .live ? 1 : 0)
             }
         }
         .overlay(alignment: .bottom) {
             if model.studio.isConnected {
                 StageToolbar()
                     .padding(.bottom, Spacing.l)
-                    .opacity(hovering || model.studio.liveState != .live ? 1 : 0)
+                    .opacity(chromeVisible || model.studio.liveState != .live ? 1 : 0)
             }
         }
         .overlay(alignment: .center) {
@@ -50,14 +51,15 @@ struct StageView: View {
                 SnapshotProgressBadge(progress: progress)
             }
         }
-        .animation(.easeInOut(duration: 0.2), value: hovering)
+        .animation(.easeInOut(duration: 0.2), value: chromeVisible)
         .onContinuousHover { phase in
             switch phase {
             case .active:
-                hovering = true
+                chromeVisible = true
                 scheduleHide()
             case .ended:
-                hovering = false
+                hideTask?.cancel()
+                chromeVisible = true
             }
         }
         .onTapGesture(count: 2) {
@@ -71,7 +73,7 @@ struct StageView: View {
         hideTask = Task {
             try? await Task.sleep(nanoseconds: 2_500_000_000)
             guard !Task.isCancelled else { return }
-            hovering = false
+            chromeVisible = false
         }
     }
 
