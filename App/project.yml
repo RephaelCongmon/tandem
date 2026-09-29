@@ -72,11 +72,35 @@ targets:
         Release:
           SWIFT_COMPILATION_MODE: wholemodule
           SWIFT_OPTIMIZATION_LEVEL: "-O"
+  TandemAppTests:
+    type: bundle.unit-test
+    platform: macOS
+    sources:
+      - path: Tests
+    dependencies:
+      - target: Tandem
+      - package: TandemCore
+        product: TandemCore
+      - package: TandemCore
+        product: TandemUI
+    settings:
+      base:
+        GENERATE_INFOPLIST_FILE: YES
+        PRODUCT_BUNDLE_IDENTIFIER: com.rofel.tandem.tests
+        DEVELOPMENT_TEAM: 2TJNTBA58V
+        CODE_SIGN_STYLE: Automatic
+        SWIFT_VERSION: "5.0"
+        MACOSX_DEPLOYMENT_TARGET: "14.0"
+        TEST_HOST: $(BUILT_PRODUCTS_DIR)/Tandem.app/Contents/MacOS/Tandem
+        BUNDLE_LOADER: $(TEST_HOST)
 schemes:
   Tandem:
     build:
       targets:
         Tandem: all
+    test:
+      targets:
+        - TandemAppTests
     run:
       config: Debug
     archive:

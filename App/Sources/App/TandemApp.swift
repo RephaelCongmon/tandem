@@ -38,6 +38,8 @@ struct TandemApp: App {
 
 final class AppDelegate: NSObject, NSApplicationDelegate {
     func applicationDidFinishLaunching(_ notification: Notification) {
+        // Unit tests host the app; don't start networking or capture under them.
+        guard ProcessInfo.processInfo.environment["XCTestConfigurationFilePath"] == nil else { return }
         MainActor.assumeIsolated {
             AppModel.shared.start()
         }

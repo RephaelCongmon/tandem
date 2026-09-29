@@ -76,12 +76,24 @@ final class ChatController {
     @ObservationIgnored private var lastMirror = 0.0
     @ObservationIgnored private let log = Logger(subsystem: "com.rofel.tandem", category: "Chat")
 
-    init(settings: SettingsStore, keys: APIKeyStore) {
+    typealias ClientFactory = (AIEndpoint) -> any AIClient
+
+    @ObservationIgnored private let clientFactory: ClientFactory
+
+    /// Stores and the client factory are injectable for tests.
+    init(
+        settings: SettingsStore,
+        keys: APIKeyStore,
+        threadStore: ThreadStore? = nil,
+        snapshots: SnapshotStore? = nil,
+        clientFactory: @escaping ClientFactory = { AIClientFactory.make(endpoint: $0) }
+    ) {
         self.settings = settings
         self.keys = keys
+        self.clientFactory = clientFactory
         attachLiveSnapshot = settings.attachLiveSnapshot
-        store = ThreadStore(directory: AppEnvironment.threadsDirectory)
-        snapshots = SnapshotStore(directory: AppEnvironment.snapshotsDirectory, keepOnDisk: settings.keepImages)
+        store = threadStore ?? ThreadStore(directory: AppEnvironment.threadsDirectory)
+        self.snapshots = snapshots ?? SnapshotStore(directory: AppEnvironment.snapshotsDirectory, keepOnDisk: settings.keepImages)
         threads = store.loadAll()
         applyRetention()
         selectedThreadID = threads.first?.id
@@ -320,7 +332,7 @@ final class ChatController {
             throw AIError.invalidConfiguration("The custom server URL isn't valid.")
         }
         let endpoint = AIEndpoint(kind: provider, baseURL: baseURL, apiKey: key)
-        return (AIClientFactory.make(endpoint: endpoint), provider, model)
+        return (clientFactory(endpoint), provider, model)
     }
 
     private func startReply(in threadID: UUID) {
@@ -387,6 +399,11 @@ final class ChatController {
                     }
                 }
                 self.flushPending(reply)
+                // A cancelled consumer ends the stream normally rather than throwing.
+                if Task.isCancelled {
+                    self.finish(reply, status: .cancelled, usage: nil, servedModel: nil)
+                    return
+                }
                 switch completion?.stopReason {
                 case .refusal(_, let explanation):
                     self.finish(reply, status: .refused(explanation), usage: completion?.usage, servedModel: completion?.servedModel)

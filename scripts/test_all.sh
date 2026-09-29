@@ -12,4 +12,8 @@ xcodebuild -project "$ROOT/App/Tandem.xcodeproj" -scheme Tandem -configuration D
   | tee /tmp/tandem-app-build.log | grep -E "warning:|error:|BUILD" | grep -v appintents || true
 grep -q "BUILD SUCCEEDED" /tmp/tandem-app-build.log || { echo "App build failed"; exit 1; }
 if grep -E "\.swift:[0-9]+:[0-9]+: warning:" /tmp/tandem-app-build.log >/dev/null; then echo "App build has warnings"; exit 1; fi
+echo "▸ App tests"
+xcodebuild -project "$ROOT/App/Tandem.xcodeproj" -scheme Tandem -derivedDataPath "$ROOT/build/DerivedData" \
+  -destination 'platform=macOS' test 2>&1 | tee /tmp/tandem-app-tests.log | grep -E "Executed [0-9]+ tests|error:|TEST (SUCCEEDED|FAILED)" | tail -2
+grep -q "TEST SUCCEEDED" /tmp/tandem-app-tests.log || { echo "App tests failed"; exit 1; }
 echo "✓ All tests passed and the app builds cleanly"
