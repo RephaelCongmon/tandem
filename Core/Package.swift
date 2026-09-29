@@ -19,7 +19,9 @@ let package = Package(
                 .linkedFramework("CoreMedia"),
                 .linkedFramework("CoreVideo"),
                 .linkedFramework("ImageIO"),
-                .linkedFramework("Security")
+                .linkedFramework("Security"),
+                .linkedFramework("IOKit"),
+                .linkedFramework("SystemConfiguration")
             ]
         ),
         // Reusable SwiftUI/AppKit components: design system, markdown view,
