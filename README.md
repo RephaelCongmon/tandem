@@ -8,22 +8,25 @@ It's built for moments like: your work laptop can't run AI tools but your person
 
 - **Real-time live view.** Hardware H.264 with low-latency rate control, ack-based flow control that bounds queuing to about one round trip, and adaptive bitrate, at 1080p/30–60 fps. The live HUD shows measured capture-to-display latency; two instances on one Mac measured **8–20 ms**, and between Macs you add your link's round-trip time (a cable or good Wi-Fi keeps it in the tens of milliseconds).
 - **Any link.** Wi-Fi/LAN, **peer-to-peer Wi-Fi** (no shared network needed — like AirDrop), **Thunderbolt/Ethernet cable**, or **Bluetooth LE** as a last resort. Tandem picks the best automatically and shows which one is in use.
-- **Ask Claude or OpenAI.** Streaming answers with Markdown, code blocks, tables and an optional reasoning summary. Claude Opus 5.5 by default (Fable 5.1, Sonnet 5.5, Haiku 4.5 available); OpenAI GPT‑6 Astra/Sol/Luna; or any OpenAI-compatible server (LM Studio, Ollama, vLLM).
+- **Ask Claude or OpenAI.** Streaming answers with Markdown, code blocks, tables and an optional reasoning summary. By default Tandem asks Claude through **Claude Code on your Claude subscription**, with no API key. Claude Opus 5.5 is the default (Fable 5.1, Sonnet 5.5 and Haiku 4.5 are available). An Anthropic or OpenAI API key (GPT‑6 Astra/Sol/Luna), or any OpenAI-compatible server (LM Studio, Ollama, vLLM), also works.
 - **Your context, your way.** Type a question; attach a fresh screenshot automatically; annotate it first (boxes, arrows, pen, highlight, text), **crop** to what matters and **redact** anything private before it leaves the Mac.
 - **On demand, by shortcut, or on a schedule.** Global shortcuts on both Macs, a "send with note" panel on the Source, and auto-capture every N seconds — optionally only when the screen actually changed (detected on the Source, so unchanged screens aren't even sent), with an hourly cap.
 - **Answers on both Macs.** Replies can be mirrored back to the Source's window and menu bar.
-- **Private by design.** Pairing is confirmed with a 6-digit code; every session is end-to-end encrypted and mutually authenticated. Screenshots go only to the AI provider you choose, with your own key, and stay in memory unless you opt to keep them.
+- **Private by design.** Pairing is confirmed with a 6-digit code; every session is end-to-end encrypted and mutually authenticated. Screenshots go only to the AI provider you choose, on your own subscription or key, and stay in memory unless you opt to keep them.
 
 ## Requirements
 
 - Two Macs running **macOS 14 Sonoma or later** (Liquid Glass chrome on macOS 26).
-- An API key for Anthropic or OpenAI (or a local OpenAI-compatible server) on the Studio Mac.
+- On the Studio Mac, one of:
+  - [Claude Code](https://claude.com/claude-code), installed and signed in with your Claude account (run `claude` once in Terminal). This is the default, and questions count toward your Claude plan's usage.
+  - An Anthropic or OpenAI API key.
+  - A local OpenAI-compatible server.
 
 ## Getting started
 
 1. Install Tandem on both Macs and open it.
 2. On the Mac you want to see, choose **Share this Mac**. Allow **Screen Recording** when macOS asks (System Settings › Privacy & Security › Screen & System Audio Recording) and approve **Local Network** access.
-3. On the other Mac, choose **Ask from this Mac**, add your API key, and pick the first Mac from the list.
+3. On the other Mac, choose **Ask from this Mac**. If Claude Code is signed in there, it's picked for you, so just click **Continue**. Otherwise choose a provider and add its API key. Then pick the first Mac from the list.
 4. Both Macs show the same 6-digit code. Confirm it matches and click **Allow** on the shared Mac. That's it — from now on the Macs reconnect automatically.
 
 ### Using it
@@ -71,8 +74,10 @@ If discovery is blocked (guest or corporate Wi-Fi with client isolation), use **
 - **Pairing** uses an X25519 key exchange with a commitment scheme and a 6-digit numeric comparison (as in Bluetooth LE Secure Connections): a man-in-the-middle can only succeed with probability 10⁻⁶ per attempt, and only if the user approves mismatched codes.
 - **Sessions** mix a fresh ephemeral key agreement with the long-term pairing key (forward secrecy, mutual authentication) and protect every record with ChaCha20-Poly1305; replayed, reordered or modified data is rejected.
 - **Keys** — pairing keys and API keys — are stored in the Keychain. Unpair a Mac any time in Settings › Devices.
+- **Claude Code** answers run the `claude` command on the Studio Mac with its tools, plugins, hooks, MCP servers and CLAUDE.md files turned off, and Tandem's instructions in place of Claude Code's own. Nothing is saved to Claude Code's session history. Tandem never sees your Claude sign-in; the CLI uses its own.
+- **Not sandboxed.** Tandem runs outside the App Sandbox so it can use your installed Claude Code and its sign-in. It is signed with the hardened runtime, and still asks macOS for camera, screen recording and local network access.
 - **Capture** only runs while a paired Studio is actually watching (and never while paused or locked). macOS shows its screen-recording indicator whenever capture is active.
-- **Screenshots** are sent only to the AI provider you configured, directly from the Studio Mac. By default they are kept **in memory only**; turn on Settings › Privacy › *Keep screenshots after quitting* to keep them with history. Threads older than your retention setting are deleted automatically.
+- **Screenshots** are sent only to the AI provider you configured, directly from the Studio Mac (through Claude Code when that's the provider). By default they are kept **in memory only**; turn on Settings › Privacy › *Keep screenshots after quitting* to keep them with history. Threads older than your retention setting are deleted automatically.
 - Tandem has no servers, accounts, analytics or telemetry.
 
 ## Troubleshooting

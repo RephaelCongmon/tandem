@@ -8,6 +8,9 @@ public enum AIProviderKind: String, Codable, CaseIterable, Sendable, Identifiabl
     case openAI
     /// Any OpenAI-compatible Chat Completions server (LM Studio, Ollama, vLLM, proxies).
     case openAICompatible
+    /// The Claude Code CLI on this Mac, answering on the user's Claude subscription.
+    /// `AIEndpoint.baseURL` is the path of the `claude` executable.
+    case claudeCode
 
     public var id: String { rawValue }
 
@@ -16,6 +19,7 @@ public enum AIProviderKind: String, Codable, CaseIterable, Sendable, Identifiabl
         case .anthropic: return "Claude"
         case .openAI: return "OpenAI"
         case .openAICompatible: return "Custom (OpenAI-compatible)"
+        case .claudeCode: return "Claude Code"
         }
     }
 
@@ -24,11 +28,25 @@ public enum AIProviderKind: String, Codable, CaseIterable, Sendable, Identifiabl
         case .anthropic: return URL(string: "https://api.anthropic.com/v1/")!
         case .openAI: return URL(string: "https://api.openai.com/v1/")!
         case .openAICompatible: return URL(string: "http://localhost:1234/v1/")!
+        case .claudeCode: return URL(fileURLWithPath: NSHomeDirectory()).appendingPathComponent(".local/bin/claude")
         }
     }
 
     /// Whether an API key is mandatory for this provider.
-    public var requiresAPIKey: Bool { self != .openAICompatible }
+    public var requiresAPIKey: Bool { self == .anthropic || self == .openAI }
+
+    /// The order providers are offered in: the no-key subscription option first.
+    public static let menuOrder: [AIProviderKind] = [.claudeCode, .anthropic, .openAI, .openAICompatible]
+
+    /// Label for pickers, saying how each option is paid for.
+    public var menuTitle: String {
+        switch self {
+        case .claudeCode: return "Claude Code — your Claude subscription"
+        case .anthropic: return "Claude API — API key"
+        case .openAI: return "OpenAI — API key"
+        case .openAICompatible: return "Custom server (OpenAI-compatible)"
+        }
+    }
 }
 
 /// Reasoning depth. Maps to `output_config.effort` (Anthropic) and

@@ -116,7 +116,7 @@ struct ModelMenu: View {
         Menu {
             Section("Provider") {
                 Picker("Provider", selection: Binding(get: { settings.provider }, set: { settings.provider = $0 })) {
-                    ForEach(AIProviderKind.allCases) { Text($0.displayName).tag($0) }
+                    ForEach(AIProviderKind.menuOrder) { Text($0.displayName).tag($0) }
                 }
                 .pickerStyle(.inline)
                 .labelsHidden()

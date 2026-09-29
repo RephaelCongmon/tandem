@@ -17,6 +17,7 @@ final class AppModel {
     let connections: ConnectionManager
     let source: SourceEngine
     let studio: StudioEngine
+    let claudeCode: ClaudeCodeService
     let hotkeys: HotkeyController
     let toasts = ToastCenter()
     private(set) var identity: DeviceIdentity
@@ -47,7 +48,9 @@ final class AppModel {
         self.identity = identity
         connections = ConnectionManager(settings: settings, trust: trust, identity: identity)
         source = SourceEngine(settings: settings)
-        studio = StudioEngine(settings: settings, keys: keys)
+        let claudeCode = ClaudeCodeService(settings: settings)
+        self.claudeCode = claudeCode
+        studio = StudioEngine(settings: settings, keys: keys, claudeCodeExecutable: { claudeCode.executable })
         hotkeys = HotkeyController()
 
         connections.onEstablished = { [weak self] connection in
@@ -120,6 +123,7 @@ final class AppModel {
             source.activate()
         case .studio:
             source.deactivate()
+            claudeCode.refreshInBackground()
         }
         // Sessions established during onboarding are handed to the engine now.
         for connection in connections.establishedConnections { route(connection) }

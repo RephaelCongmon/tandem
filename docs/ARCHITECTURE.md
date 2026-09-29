@@ -21,7 +21,7 @@
 | `Core/Sources/TandemCore/Transport` | `ByteTransport` protocol, Network.framework TCP transport, Bonjour listener/browser, link classification, Bluetooth LE L2CAP advertiser/browser/transport |
 | `Core/Sources/TandemCore/Session` | `PeerLink` (one secure session), `SnapshotAssembler` |
 | `Core/Sources/TandemCore/Media` | Low-latency `H264Encoder`, `VideoSampleBufferFactory`, `ImageCodec` (JPEG, thumbnails, change fingerprints) |
-| `Core/Sources/TandemCore/AI` | Provider-neutral types, SSE decoder, Anthropic Messages / OpenAI Responses / Chat Completions streaming clients, model catalog |
+| `Core/Sources/TandemCore/AI` | Provider-neutral types, SSE decoder, Anthropic Messages / OpenAI Responses / Chat Completions streaming clients, the Claude Code client (runs the local `claude` CLI) and its locator, model catalog |
 | `Core/Sources/TandemCore/Conversation` | Thread/message models, cache-friendly `ContextBuilder`, `ThreadStore`, `SnapshotStore` |
 | `Core/Sources/TandemCore/Markdown` | Streaming-tolerant block parser |
 | `Core/Sources/TandemUI` | Design system, `MarkdownView`, snapshot markup editor + renderer, global hotkeys + recorder |
@@ -53,7 +53,9 @@
 - failed/cancelled answers are skipped and consecutive user turns are merged;
 - assistant turns replay text only (no thinking blocks), keeping history append-only.
 
-Anthropic requests use `claude-opus-5-5` by default with adaptive thinking, `output_config.effort`, automatic prompt caching (`cache_control` at the top level) and server-side refusal fallbacks (`fallbacks: "default"`). Capabilities per model live in `ModelCatalog`; unsupported parameters are dropped and retried once if a server rejects them.
+**Claude Code** (the default provider) runs the user's `claude` CLI once per question. The command is `claude -p --input-format stream-json --output-format stream-json --include-partial-messages --safe-mode --tools "" --no-session-persistence`, with `--model`, `--effort` and `--system-prompt`. `--safe-mode` keeps the user's hooks, plugins, MCP servers, skills and CLAUDE.md out, while the CLI's own subscription sign-in still works (`--bare` would not read it). The CLI can't be handed earlier assistant turns, so the conversation is folded into a single stream-json user message: a labelled transcript with screenshots in place, ending with the new question. The CLI relays Messages API stream events, parsed by the same `AnthropicStreamParser`. Its failures (signed out, model unavailable, usage limit) arrive as a synthetic assistant `error` plus a `result` with `is_error`, and are mapped to friendly errors. `ClaudeCodeLocator` finds the binary in the usual install locations or through the login shell, and reads `claude auth status`. This is why the app isn't sandboxed.
+
+Anthropic API requests use `claude-opus-5-5` by default with adaptive thinking, `output_config.effort`, automatic prompt caching (`cache_control` at the top level) and server-side refusal fallbacks (`fallbacks: "default"`). Capabilities per model live in `ModelCatalog`; unsupported parameters are dropped and retried once if a server rejects them.
 
 ## Persistence
 

@@ -8,6 +8,12 @@ struct TandemApp: App {
     @NSApplicationDelegateAdaptor(AppDelegate.self) private var appDelegate
     private let model = AppModel.shared
 
+    init() {
+        // No session restore: a restored-but-empty session stops SwiftUI from opening the
+        // main window on a normal launch. Tandem decides itself (see MainWindowConfigurator).
+        UserDefaults.standard.register(defaults: ["ApplePersistenceIgnoreState": true])
+    }
+
     var body: some Scene {
         Window("Tandem", id: "main") {
             RootView()

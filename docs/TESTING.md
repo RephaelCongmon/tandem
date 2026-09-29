@@ -7,7 +7,9 @@ scripts/test_all.sh
 ```
 
 It runs:
-- **305 core tests.** Wire codec, secure handshake (including man-in-the-middle, tamper and replay), real-TCP loopback sessions, H.264 encode→decode, image codec, context building, stores, AI clients against recorded streams, Markdown, Bluetooth stream transport, markup renderer and editor, hotkeys.
+- **333 core tests** (plus one opt-in live check). Wire codec, secure handshake (including man-in-the-middle, tamper and replay), real-TCP loopback sessions, H.264 encode→decode, image codec, context building, stores, AI clients against recorded streams, Markdown, Bluetooth stream transport, markup renderer and editor, hotkeys.
+  - The Claude Code client is tested against recorded CLI output and a fake `claude` script: streaming, stdin contents, errors, a CLI that quits without reading, cancellation, and idle timeout.
+  - `TANDEM_LIVE_CLAUDE=1 swift test --filter AIClaudeCodeLiveTests` (in `Core/`) checks the real installed CLI's version and sign-in.
 - **9 app tests.** Chat streaming, failure/retry, stop, snapshots, busy handling, settings persistence, hotkey overrides.
 - **An app build** that fails on any warning.
 
@@ -22,6 +24,7 @@ Verified this way:
 - a pairing request bringing the hidden Source's window forward with the code sheet, without activating it;
 - live view at 1920×1080, 30 fps, with 8–20 ms measured capture-to-display latency over loopback;
 - stream pausing while the Studio window is hidden and resuming when it's visible;
+- asking through the real Claude Code CLI on a subscription, with a follow-up question that relies on the earlier answer and screenshot;
 - ask with a live snapshot, which produces a correct Anthropic request: `claude-opus-5-5`, adaptive thinking, `effort`, `fallbacks: "default"` plus its beta header, `cache_control`, and a base64 JPEG;
 - streamed Markdown rendering, the reasoning disclosure, and reply mirroring to the Source;
 - Source push with a note, and the quick-note panel;
@@ -56,6 +59,7 @@ These need two real Macs (and permissions only a person can grant):
    - Lock the Source: sharing pauses and resumes on unlock.
    - With "Keep screenshots" off, relaunching the Studio shows *Not kept* placeholders.
 8. **Real AI.**
+   - With Claude Code signed in on the Studio, Settings › AI shows the account and plan. **Test** answers in a few seconds. Sign out (`claude auth logout`): the chat shows how to sign in again.
    - Add an Anthropic key, press **Test** in Settings › AI, then ask with a screenshot.
    - Repeat with an OpenAI key.
    - Try an OpenAI-compatible local server (LM Studio at `http://localhost:1234/v1`).

@@ -79,6 +79,7 @@ final class ChatController {
     typealias ClientFactory = (AIEndpoint) -> any AIClient
 
     @ObservationIgnored private let clientFactory: ClientFactory
+    @ObservationIgnored private let claudeCodeExecutable: @MainActor () -> URL?
 
     /// Stores and the client factory are injectable for tests.
     init(
@@ -86,11 +87,13 @@ final class ChatController {
         keys: APIKeyStore,
         threadStore: ThreadStore? = nil,
         snapshots: SnapshotStore? = nil,
-        clientFactory: @escaping ClientFactory = { AIClientFactory.make(endpoint: $0) }
+        clientFactory: @escaping ClientFactory = { AIClientFactory.make(endpoint: $0) },
+        claudeCodeExecutable: @escaping @MainActor () -> URL? = { ClaudeCodeLocator.quickLocate(override: nil) }
     ) {
         self.settings = settings
         self.keys = keys
         self.clientFactory = clientFactory
+        self.claudeCodeExecutable = claudeCodeExecutable
         attachLiveSnapshot = settings.attachLiveSnapshot
         store = threadStore ?? ThreadStore(directory: AppEnvironment.threadsDirectory)
         self.snapshots = snapshots ?? SnapshotStore(directory: AppEnvironment.snapshotsDirectory, keepOnDisk: settings.keepImages)
@@ -365,6 +368,12 @@ final class ChatController {
         let provider = settings.provider
         let model = settings.currentModel.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !model.isEmpty else { throw AIError.invalidConfiguration("Choose a model in Settings › AI.") }
+        if provider == .claudeCode {
+            // Runs on the Claude subscription the CLI is signed in with; no key involved.
+            guard let executable = claudeCodeExecutable() else { throw AIError.invalidConfiguration(ClaudeCodeMessages.notFound) }
+            let endpoint = AIEndpoint(kind: .claudeCode, baseURL: executable, apiKey: "")
+            return (clientFactory(endpoint), provider, model)
+        }
         let key = keys.key(for: provider)
         if provider.requiresAPIKey, key.isEmpty { throw AIError.missingAPIKey }
         var baseURL: URL? = provider == .openAICompatible ? URL(string: settings.customBaseURL) : nil

@@ -30,6 +30,7 @@ public enum AIClientFactory {
         case .anthropic: return AnthropicClient(endpoint: endpoint, session: session)
         case .openAI: return OpenAIResponsesClient(endpoint: endpoint, session: session)
         case .openAICompatible: return ChatCompletionsClient(endpoint: endpoint, session: session)
+        case .claudeCode: return ClaudeCodeClient(executable: endpoint.baseURL)
         }
     }
 }

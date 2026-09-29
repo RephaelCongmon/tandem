@@ -145,7 +145,7 @@ private struct WelcomeStep: View {
             }
             VStack(alignment: .leading, spacing: Spacing.m) {
                 Feature(icon: "bolt.horizontal.fill", title: "Real-time live view", detail: "See your other Mac with near-zero latency over Wi-Fi, a cable, or Bluetooth.")
-                Feature(icon: "sparkles", title: "Ask Claude or OpenAI", detail: "Send snapshots with your own context, markup and redactions as a conversation.")
+                Feature(icon: "sparkles", title: "Ask Claude or OpenAI", detail: "Send snapshots with your own context, markup and redactions, on your Claude subscription or an API key.")
                 Feature(icon: "timer", title: "On your schedule", detail: "Capture on demand, with a global shortcut, or automatically when the screen changes.")
                 Feature(icon: "lock.shield.fill", title: "Private by design", detail: "End-to-end encrypted pairing. Screenshots stay in memory unless you choose to keep them.")
             }
@@ -361,27 +361,45 @@ private struct StudioSetupStep: View {
         VStack(alignment: .leading, spacing: Spacing.l) {
             VStack(alignment: .leading, spacing: 6) {
                 Text("Connect your AI").font(TandemFont.title)
-                Text("Tandem talks to the provider directly with your key. The key is stored in your Keychain.")
+                Text(settings.provider == .claudeCode
+                     ? "Tandem asks Claude through Claude Code on this Mac, using your Claude subscription. No API key needed."
+                     : "Tandem talks to the provider directly with your key. The key is stored in your Keychain.")
                     .font(TandemFont.body)
                     .foregroundStyle(Theme.textSecondary)
+                    .fixedSize(horizontal: false, vertical: true)
             }
             Picker("Provider", selection: $settings.provider) {
-                ForEach(AIProviderKind.allCases) { Text($0.displayName).tag($0) }
+                ForEach(AIProviderKind.menuOrder) { Text($0.menuTitle).tag($0) }
             }
-            .pickerStyle(.segmented)
+            .pickerStyle(.radioGroup)
             .labelsHidden()
             .onChange(of: settings.provider) { _, provider in
                 keyDraft = model.keys.key(for: provider)
                 error = nil
+                if provider == .claudeCode { model.claudeCode.refreshInBackground() }
             }
 
-            VStack(alignment: .leading, spacing: 6) {
-                Text(settings.provider == .openAICompatible ? "API key (optional)" : "API key")
-                    .font(TandemFont.caption).foregroundStyle(Theme.textSecondary)
-                SecureField(placeholder, text: $keyDraft)
-                    .textFieldStyle(.roundedBorder)
-                if let link = keyLink {
-                    Link("Get an API key", destination: link).font(TandemFont.caption)
+            if settings.provider == .claudeCode {
+                VStack(alignment: .leading, spacing: 8) {
+                    ClaudeCodeStatusRow()
+                    if let status = model.claudeCode.status, !status.isReady {
+                        Button("Check Again") { model.claudeCode.refreshInBackground() }
+                            .buttonStyle(TandemButtonStyle(.secondary, size: .small))
+                            .disabled(model.claudeCode.isChecking)
+                    }
+                }
+                .padding(Spacing.m)
+                .frame(maxWidth: .infinity, alignment: .leading)
+                .background(RoundedRectangle(cornerRadius: Radius.m, style: .continuous).fill(Theme.surfaceRaised))
+            } else {
+                VStack(alignment: .leading, spacing: 6) {
+                    Text(settings.provider == .openAICompatible ? "API key (optional)" : "API key")
+                        .font(TandemFont.caption).foregroundStyle(Theme.textSecondary)
+                    SecureField(placeholder, text: $keyDraft)
+                        .textFieldStyle(.roundedBorder)
+                    if let link = keyLink {
+                        Link("Get an API key", destination: link).font(TandemFont.caption)
+                    }
                 }
             }
             if settings.provider == .openAICompatible {
@@ -406,6 +424,7 @@ private struct StudioSetupStep: View {
                 InlineBanner(text: error)
             }
             StepFooter(onBack: onBack, nextTitle: "Continue", nextEnabled: canContinue) {
+                guard settings.provider.requiresAPIKey || settings.provider == .openAICompatible else { return onNext() }
                 do {
                     try model.keys.setKey(keyDraft, for: settings.provider)
                     onNext()
@@ -413,16 +432,28 @@ private struct StudioSetupStep: View {
                     self.error = error.localizedDescription
                 }
             }
-            Text("You can skip this and add a key later in Settings › AI.")
+            Text("You can skip this and change it later in Settings › AI.")
                 .font(TandemFont.caption)
                 .foregroundStyle(Theme.textTertiary)
                 .onTapGesture { onNext() }
         }
-        .onAppear { keyDraft = model.keys.key(for: model.settings.provider) }
+        .onAppear {
+            keyDraft = model.keys.key(for: model.settings.provider)
+            Task {
+                await model.claudeCode.refresh()
+                // Prefer the subscription when Claude Code is ready and no key was set up yet.
+                if model.claudeCode.isReady, model.settings.provider.requiresAPIKey, !model.keys.hasKey(for: model.settings.provider) {
+                    model.settings.provider = .claudeCode
+                }
+            }
+        }
     }
 
     private var canContinue: Bool {
-        model.settings.provider == .openAICompatible || !keyDraft.trimmingCharacters(in: .whitespaces).isEmpty
+        switch model.settings.provider {
+        case .claudeCode, .openAICompatible: return true
+        case .anthropic, .openAI: return !keyDraft.trimmingCharacters(in: .whitespaces).isEmpty
+        }
     }
 
     private var placeholder: String {
@@ -430,6 +461,7 @@ private struct StudioSetupStep: View {
         case .anthropic: return "sk-ant-…"
         case .openAI: return "sk-…"
         case .openAICompatible: return "Leave empty if the server doesn't need one"
+        case .claudeCode: return ""
         }
     }
 
@@ -437,7 +469,7 @@ private struct StudioSetupStep: View {
         switch model.settings.provider {
         case .anthropic: return URL(string: "https://platform.claude.com/settings/keys")
         case .openAI: return URL(string: "https://platform.openai.com/api-keys")
-        case .openAICompatible: return nil
+        case .openAICompatible, .claudeCode: return nil
         }
     }
 }

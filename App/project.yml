@@ -45,13 +45,11 @@ targets:
         NSScreenCaptureUsageDescription: "Tandem shares this Mac's screen with the other Mac you paired, only while sharing is on."
     entitlements:
       path: Tandem.entitlements
+      # Not sandboxed (the user's explicit choice): the Claude Code provider runs the user's
+      # own `claude` CLI, which needs its sign-in and install. The hardened runtime still
+      # gates the camera.
       properties:
-        com.apple.security.app-sandbox: true
-        com.apple.security.network.client: true
-        com.apple.security.network.server: true
-        com.apple.security.device.bluetooth: true
         com.apple.security.device.camera: true
-        com.apple.security.files.user-selected.read-write: true
     settings:
       base:
         PRODUCT_BUNDLE_IDENTIFIER: com.rofel.tandem

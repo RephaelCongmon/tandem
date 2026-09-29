@@ -144,23 +144,37 @@ private struct AISettings: View {
         Form {
             Section("Provider") {
                 Picker("Provider", selection: $settings.provider) {
-                    ForEach(AIProviderKind.allCases) { Text($0.displayName).tag($0) }
+                    ForEach(AIProviderKind.menuOrder) { Text($0.menuTitle).tag($0) }
                 }
-                .pickerStyle(.segmented)
-                .onChange(of: settings.provider) { _, _ in
+                .onChange(of: settings.provider) { _, provider in
                     keyDraft = model.keys.key(for: settings.provider)
                     keyStatus = nil
                     remoteModels = []
+                    if provider == .claudeCode { model.claudeCode.refreshInBackground() }
                 }
-                if settings.provider == .openAICompatible {
-                    TextField("Server URL", text: $settings.customBaseURL)
-                }
-                HStack {
-                    SecureField("API key", text: $keyDraft, prompt: Text(settings.provider == .openAICompatible ? "Optional" : "Paste your key"))
-                    Button("Save") { saveKey() }
-                        .disabled(keyDraft == model.keys.key(for: settings.provider))
-                    Button(testing ? "Testing…" : "Test") { Task { await test() } }
-                        .disabled(testing)
+                if settings.provider == .claudeCode {
+                    ClaudeCodeStatusRow()
+                    HStack {
+                        TextField("Location", text: $settings.claudeCodePath, prompt: Text(model.claudeCode.executable?.path ?? "Found automatically"))
+                            .onSubmit { model.claudeCode.refreshInBackground() }
+                        Button("Check Again") { model.claudeCode.refreshInBackground() }
+                            .disabled(model.claudeCode.isChecking)
+                        Button(testing ? "Testing…" : "Test") { Task { await test() } }
+                            .disabled(testing)
+                    }
+                    Text("Questions go to Claude through Claude Code on this Mac and count toward your Claude plan's usage, with no API key. Tandem starts it with its tools, plugins, hooks and CLAUDE.md files turned off.")
+                        .font(TandemFont.caption).foregroundStyle(Theme.textSecondary)
+                } else {
+                    if settings.provider == .openAICompatible {
+                        TextField("Server URL", text: $settings.customBaseURL)
+                    }
+                    HStack {
+                        SecureField("API key", text: $keyDraft, prompt: Text(settings.provider == .openAICompatible ? "Optional" : "Paste your key"))
+                        Button("Save") { saveKey() }
+                            .disabled(keyDraft == model.keys.key(for: settings.provider))
+                        Button(testing ? "Testing…" : "Test") { Task { await test() } }
+                            .disabled(testing)
+                    }
                 }
                 if let keyStatus {
                     Text(keyStatus).font(TandemFont.caption).foregroundStyle(Theme.textSecondary)
@@ -212,7 +226,10 @@ private struct AISettings: View {
             }
         }
         .formStyle(.grouped)
-        .onAppear { keyDraft = model.keys.key(for: model.settings.provider) }
+        .onAppear {
+            keyDraft = model.keys.key(for: model.settings.provider)
+            if model.settings.provider == .claudeCode { model.claudeCode.refreshInBackground() }
+        }
     }
 
     private func saveKey() {
@@ -225,10 +242,14 @@ private struct AISettings: View {
     }
 
     private func test() async {
-        saveKey()
         testing = true
         defer { testing = false }
         let settings = model.settings
+        if settings.provider == .claudeCode {
+            keyStatus = await model.claudeCode.test(model: settings.currentModel)
+            return
+        }
+        saveKey()
         let baseURL = settings.provider == .openAICompatible ? URL(string: settings.customBaseURL) : nil
         let client = AIClientFactory.make(endpoint: AIEndpoint(kind: settings.provider, baseURL: baseURL, apiKey: model.keys.key(for: settings.provider)))
         do {
@@ -238,6 +259,28 @@ private struct AISettings: View {
         } catch {
             keyStatus = (error as? LocalizedError)?.errorDescription ?? error.localizedDescription
         }
+    }
+}
+
+/// Whether Claude Code is installed and signed in, with the fix when it isn't.
+struct ClaudeCodeStatusRow: View {
+    @Environment(AppModel.self) private var model
+
+    var body: some View {
+        HStack(alignment: .firstTextBaseline, spacing: 8) {
+            if model.claudeCode.isChecking && model.claudeCode.status == nil {
+                ProgressView().controlSize(.small)
+                Text("Looking for Claude Code…").foregroundStyle(Theme.textSecondary)
+            } else if let status = model.claudeCode.status {
+                Image(systemName: status.isReady ? "checkmark.circle.fill" : "exclamationmark.triangle.fill")
+                    .foregroundStyle(status.isReady ? Theme.success : Theme.warning)
+                Text(status.summary)
+                    .foregroundStyle(status.isReady ? Theme.textPrimary : Theme.textSecondary)
+                    .fixedSize(horizontal: false, vertical: true)
+                    .textSelection(.enabled)
+            }
+        }
+        .font(TandemFont.callout)
     }
 }
 

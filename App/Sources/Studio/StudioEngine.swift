@@ -69,9 +69,9 @@ final class StudioEngine {
     @ObservationIgnored private var automationTask: Task<Void, Never>?
     @ObservationIgnored private let log = Logger(subsystem: "com.rofel.tandem", category: "Studio")
 
-    init(settings: SettingsStore, keys: APIKeyStore) {
+    init(settings: SettingsStore, keys: APIKeyStore, claudeCodeExecutable: @escaping @MainActor () -> URL? = { nil }) {
         self.settings = settings
-        chat = ChatController(settings: settings, keys: keys)
+        chat = ChatController(settings: settings, keys: keys, claudeCodeExecutable: claudeCodeExecutable)
         chat.studio = self
         renderer.onStats = { [weak self] stats in self?.liveStats = stats }
         renderer.onFirstFrame = { [weak self] in self?.hasVideo = true }

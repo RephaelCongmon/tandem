@@ -179,7 +179,10 @@ final class SettingsStore {
     var snapshotQuality: Double = 0.9 { didSet { store(snapshotQuality, "source.snapshotQuality") } }
 
     // MARK: Studio / AI
-    var provider: AIProviderKind = .anthropic { didSet { store(provider, "ai.provider") } }
+    var provider: AIProviderKind = .claudeCode { didSet { store(provider, "ai.provider") } }
+    var claudeCodeModel: String = ModelCatalog.defaultModelID(for: .claudeCode) ?? "claude-opus-5-5" { didSet { store(claudeCodeModel, "ai.claudeCodeModel") } }
+    /// Where `claude` is installed, when it isn't found automatically. Empty means "find it".
+    var claudeCodePath: String = "" { didSet { store(claudeCodePath, "ai.claudeCodePath") } }
     var anthropicModel: String = ModelCatalog.defaultModelID(for: .anthropic) ?? "claude-opus-5-5" { didSet { store(anthropicModel, "ai.anthropicModel") } }
     var openAIModel: String = ModelCatalog.defaultModelID(for: .openAI) ?? "gpt-6-astra" { didSet { store(openAIModel, "ai.openAIModel") } }
     var customModel: String = "" { didSet { store(customModel, "ai.customModel") } }
@@ -247,7 +250,9 @@ final class SettingsStore {
         pauseWhenLocked = load("source.pauseWhenLocked", true)
         snapshotResolution = load("source.snapshotResolution", .high)
         snapshotQuality = load("source.snapshotQuality", 0.9)
-        provider = load("ai.provider", .anthropic)
+        provider = load("ai.provider", .claudeCode)
+        claudeCodeModel = load("ai.claudeCodeModel", ModelCatalog.defaultModelID(for: .claudeCode) ?? "claude-opus-5-5")
+        claudeCodePath = load("ai.claudeCodePath", "")
         anthropicModel = load("ai.anthropicModel", ModelCatalog.defaultModelID(for: .anthropic) ?? "claude-opus-5-5")
         openAIModel = load("ai.openAIModel", ModelCatalog.defaultModelID(for: .openAI) ?? "gpt-6-astra")
         customModel = load("ai.customModel", "")
@@ -291,6 +296,7 @@ final class SettingsStore {
             case .anthropic: return anthropicModel
             case .openAI: return openAIModel
             case .openAICompatible: return customModel
+            case .claudeCode: return claudeCodeModel
             }
         }
         set {
@@ -298,6 +304,7 @@ final class SettingsStore {
             case .anthropic: anthropicModel = newValue
             case .openAI: openAIModel = newValue
             case .openAICompatible: customModel = newValue
+            case .claudeCode: claudeCodeModel = newValue
             }
         }
     }

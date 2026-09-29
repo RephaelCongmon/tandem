@@ -10,13 +10,32 @@ struct ThreadPanel: View {
             ThreadHeader()
             Hairline()
             VStack(spacing: Spacing.s) {
-                if model.settings.provider.requiresAPIKey && !model.keys.hasKey(for: model.settings.provider) {
+                if needsKey {
+                    if model.claudeCode.isReady {
+                        InlineBanner(
+                            text: "Add your \(model.settings.provider.displayName) API key, or ask through Claude Code on your Claude subscription.",
+                            systemImage: "key.fill",
+                            tint: Theme.accent,
+                            actionTitle: "Use Claude Code",
+                            action: { model.settings.provider = .claudeCode }
+                        )
+                    } else {
+                        InlineBanner(
+                            text: "Add your \(model.settings.provider.displayName) API key to start asking.",
+                            systemImage: "key.fill",
+                            tint: Theme.accent,
+                            actionTitle: "Open Settings",
+                            action: { model.openSettingsAction?() }
+                        )
+                    }
+                }
+                if let problem = claudeCodeProblem {
                     InlineBanner(
-                        text: "Add your \(model.settings.provider.displayName) API key to start asking.",
-                        systemImage: "key.fill",
-                        tint: Theme.accent,
-                        actionTitle: "Open Settings",
-                        action: { model.openSettingsAction?() }
+                        text: problem,
+                        systemImage: "terminal",
+                        tint: Theme.warning,
+                        actionTitle: "Check Again",
+                        action: { model.claudeCode.refreshInBackground() }
                     )
                 }
                 if let banner = model.chat.banner {
@@ -24,7 +43,7 @@ struct ThreadPanel: View {
                 }
             }
             .padding(.horizontal, Spacing.l)
-            .padding(.top, model.chat.banner != nil || !model.keys.hasKey(for: model.settings.provider) && model.settings.provider.requiresAPIKey ? Spacing.m : 0)
+            .padding(.top, model.chat.banner != nil || needsKey || claudeCodeProblem != nil ? Spacing.m : 0)
 
             if let thread = model.chat.selectedThread, !thread.messages.isEmpty {
                 MessageList(thread: thread)
@@ -34,6 +53,16 @@ struct ThreadPanel: View {
             ComposerView()
         }
         .background(Theme.surface)
+    }
+
+    private var needsKey: Bool {
+        model.settings.provider.requiresAPIKey && !model.keys.hasKey(for: model.settings.provider)
+    }
+
+    /// Why Claude Code can't answer yet, once a check has run.
+    private var claudeCodeProblem: String? {
+        guard model.settings.provider == .claudeCode, let status = model.claudeCode.status, !status.isReady else { return nil }
+        return status.summary
     }
 }
 

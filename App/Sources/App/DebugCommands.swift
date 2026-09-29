@@ -67,6 +67,11 @@ enum DebugCommands {
             model.openSettingsAction?()
         case "close":
             for window in NSApp.windows where window.identifier?.rawValue == "main" || window.title == "Tandem" { window.close() }
+        case "claudeStatus":
+            Task {
+                await model.claudeCode.refresh()
+                Logger(subsystem: "com.rofel.tandem", category: "Debug").notice("TANDEM-CLAUDE \(model.claudeCode.status?.summary ?? "nil", privacy: .public)")
+            }
         case "show":
             Logger(subsystem: "com.rofel.tandem", category: "Debug").notice("TANDEM-SHOW hasAction=\(model.openMainWindowAction != nil, privacy: .public)")
             model.showMainWindow()

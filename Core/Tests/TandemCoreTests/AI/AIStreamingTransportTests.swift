@@ -3,6 +3,9 @@ import XCTest
 
 /// Provider-neutral transport behavior: cancellation, transport errors, URLs, the factory, logging.
 final class AIStreamingTransportTests: XCTestCase {
+    /// Providers reached over HTTP (Claude Code runs a local process; see AIClaudeCodeTests).
+    static let httpProviders: [AIProviderKind] = [.anthropic, .openAI, .openAICompatible]
+
     /// A stream that sends a first text delta and then stalls with the connection open.
     private func stallingStream(for kind: AIProviderKind) -> AITestStubResponse {
         let body: String
@@ -17,7 +20,7 @@ final class AIStreamingTransportTests: XCTestCase {
                 ("response.created", #"{"type":"response.created","response":{"model":"gpt-6-astra"}}"#),
                 ("response.output_text.delta", #"{"type":"response.output_text.delta","delta":"First"}"#)
             ])
-        case .openAICompatible:
+        case .openAICompatible, .claudeCode:
             body = aiTestSSE([(nil, #"{"model":"m","choices":[{"index":0,"delta":{"content":"First"}}]}"#)])
         }
         var stub = AITestStubResponse.sse(body)
@@ -29,14 +32,14 @@ final class AIStreamingTransportTests: XCTestCase {
         switch kind {
         case .anthropic: return "claude-opus-5-5"
         case .openAI: return "gpt-6-astra"
-        case .openAICompatible: return "local-model"
+        case .openAICompatible, .claudeCode: return "local-model"
         }
     }
 
     // MARK: Cancellation
 
     func testCancellingTheConsumerCancelsTheRequestPromptly() async {
-        for kind in AIProviderKind.allCases {
+        for kind in Self.httpProviders {
             let server = AITestStubServer()
             server.enqueue(stallingStream(for: kind))
             let client = server.client(kind)
@@ -69,7 +72,7 @@ final class AIStreamingTransportTests: XCTestCase {
     }
 
     func testCancellingBeforeResponseHeadersArrive() async {
-        for kind in AIProviderKind.allCases {
+        for kind in Self.httpProviders {
             let server = AITestStubServer()
             server.enqueue(.neverResponds)
             let client = server.client(kind)
@@ -165,7 +168,7 @@ final class AIStreamingTransportTests: XCTestCase {
     func testEveryClientHandlesBaseURLsWithAndWithoutATrailingSlash() async {
         let paths: [AIProviderKind: String] = [.anthropic: "messages", .openAI: "responses", .openAICompatible: "chat/completions"]
         let successes: [AIProviderKind: AITestStubResponse] = [.anthropic: aiTestAnthropicOK(), .openAI: aiTestOpenAIOK(), .openAICompatible: aiTestChatOK()]
-        for kind in AIProviderKind.allCases {
+        for kind in Self.httpProviders {
             for trailingSlash in [true, false] {
                 let server = AITestStubServer()
                 server.enqueue(successes[kind]!)
@@ -195,7 +198,7 @@ final class AIStreamingTransportTests: XCTestCase {
     }
 
     func testMissingKeyPerProvider() async {
-        for kind in AIProviderKind.allCases {
+        for kind in Self.httpProviders {
             let server = AITestStubServer()
             server.enqueue(aiTestChatOK())
             let result = await aiTestCollect(server.client(kind, apiKey: "").stream(aiTestRequest(model: model(for: kind))))
