@@ -18,10 +18,10 @@ public final class ThreadStore: @unchecked Sendable {
         self.directory = directory
         self.coalesceInterval = coalesceInterval
         encoder = JSONEncoder()
-        encoder.dateEncodingStrategy = .secondsSince1970
+        encoder.dateEncodingStrategy = .deferredToDate
         encoder.outputFormatting = [.sortedKeys]
         decoder = JSONDecoder()
-        decoder.dateDecodingStrategy = .secondsSince1970
+        decoder.dateDecodingStrategy = .deferredToDate
         try? FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
     }
 
