@@ -469,10 +469,22 @@ public final class MarkupEditorState {
     /// Moves the selected annotation by a normalized delta, keeping it on the image (one undo step).
     public func nudgeSelection(dx: CGFloat, dy: CGFloat) {
         guard let annotation = selectedAnnotation else { return }
-        let bounds = annotation.normalizedPointBounds
-        let clampedDX = min(max(dx, -bounds.minX), 1 - bounds.maxX)
-        let clampedDY = min(max(dy, -bounds.minY), 1 - bounds.maxY)
-        update(annotation.translated(dx: clampedDX, dy: clampedDY))
+        let delta = Self.clampedTranslation(dx: dx, dy: dy, bounds: annotation.normalizedPointBounds)
+        update(annotation.translated(dx: delta.dx, dy: delta.dy))
+    }
+
+    /// Limits a normalized move of something spanning `bounds` so it stays
+    /// inside `limits`. Content that already sticks out may move back in or stay
+    /// put, but is never pushed the opposite way of the requested move.
+    public static func clampedTranslation(dx: CGFloat, dy: CGFloat, bounds: CGRect, limits: CGRect = CGRect(x: 0, y: 0, width: 1, height: 1)) -> CGVector {
+        guard !bounds.isNull else { return CGVector(dx: dx, dy: dy) }
+        func clamp(_ delta: CGFloat, low: CGFloat, high: CGFloat) -> CGFloat {
+            delta < 0 ? max(delta, min(0, low)) : min(delta, max(0, high))
+        }
+        return CGVector(
+            dx: clamp(dx, low: limits.minX - bounds.minX, high: limits.maxX - bounds.maxX),
+            dy: clamp(dy, low: limits.minY - bounds.minY, high: limits.maxY - bounds.maxY)
+        )
     }
 
     /// Sets (or clears) the normalized crop rectangle. The rect is clamped to
@@ -541,7 +553,12 @@ public final class MarkupEditorState {
     public var canRedo: Bool { !redoStack.isEmpty }
 
     /// Reverts the last undo step.
+    ///
+    /// An open text session is committed first, so undoing while typing a
+    /// label discards that label (and redo brings it back) instead of undoing
+    /// an older step underneath the still-open field.
     public func undo() {
+        commitTextEditing()
         endInteractiveChange()
         guard let previous = undoStack.popLast() else { return }
         redoStack.append(document)
@@ -549,8 +566,10 @@ public final class MarkupEditorState {
         pruneSelection()
     }
 
-    /// Re-applies the last undone step.
+    /// Re-applies the last undone step. An open text session is committed
+    /// first; a non-empty label counts as a new edit and clears the redo history.
     public func redo() {
+        commitTextEditing()
         endInteractiveChange()
         guard let next = redoStack.popLast() else { return }
         undoStack.append(document)
