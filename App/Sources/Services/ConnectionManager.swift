@@ -582,10 +582,15 @@ final class ConnectionManager {
     // MARK: Reconnect
 
     private func maybeAutoConnect() {
-        guard role == .studio, let target = desiredSourceID, reconnectTask == nil,
+        guard role == .studio, let target = desiredSourceID,
               trust.isTrusted(target), connection(for: target) == nil, !connectingDeviceIDs.contains(target) else { return }
         let reachable = networkDiscoveries[target] != nil || (settings.bluetoothEnabled && bluetoothDiscoveries[target] != nil)
-        if reachable { openConnection(to: target, forcePairing: false) }
+        guard reachable else { return }
+        // The Source is back: don't wait out a pending backoff.
+        reconnectTask?.cancel()
+        reconnectTask = nil
+        reconnectAt = nil
+        openConnection(to: target, forcePairing: false)
     }
 
     private func scheduleReconnectIfNeeded(for deviceID: String) {
