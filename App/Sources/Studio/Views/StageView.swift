@@ -141,7 +141,15 @@ private struct StageHUD: View {
                     StatChip(systemImage: "bolt.fill", value: "\(Int(latency.rounded())) ms", tint: latencyTint(latency))
                         .help("Glass-to-glass latency estimate")
                 }
-                StatChip(systemImage: "speedometer", value: "\(Int(stats.framesPerSecond.rounded())) fps")
+                TimelineView(.periodic(from: .now, by: 1)) { context in
+                    // The Source only sends frames when pixels change.
+                    if let last = stats.lastFrameAt, context.date.timeIntervalSince(last) > 1.5 {
+                        StatChip(systemImage: "pause.circle", value: "No motion")
+                            .help("The shared screen hasn't changed; frames resume as soon as it does.")
+                    } else {
+                        StatChip(systemImage: "speedometer", value: "\(Int(stats.framesPerSecond.rounded())) fps")
+                    }
+                }
                 if stats.width > 0 {
                     StatChip(systemImage: "rectangle.dashed", value: "\(stats.width)×\(stats.height)")
                 }
