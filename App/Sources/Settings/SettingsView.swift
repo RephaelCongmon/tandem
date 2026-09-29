@@ -4,22 +4,31 @@ import TandemUI
 
 struct SettingsView: View {
     @Environment(AppModel.self) private var model
+    @State private var tab: String = SettingsView.initialTab
+
+    private static var initialTab: String {
+        #if DEBUG
+        return UserDefaults.standard.string(forKey: "TandemSettingsTab") ?? "general"
+        #else
+        return "general"
+        #endif
+    }
 
     var body: some View {
-        TabView {
-            GeneralSettings().tabItem { Label("General", systemImage: "gearshape") }
+        TabView(selection: $tab) {
+            GeneralSettings().tabItem { Label("General", systemImage: "gearshape") }.tag("general")
             if model.settings.role != .studio {
-                SharingSettings().tabItem { Label("Sharing", systemImage: "rectangle.on.rectangle.angled") }
+                SharingSettings().tabItem { Label("Sharing", systemImage: "rectangle.on.rectangle.angled") }.tag("sharing")
             }
             if model.settings.role != .source {
-                AISettings().tabItem { Label("AI", systemImage: "sparkles") }
-                StudioSettings().tabItem { Label("Studio", systemImage: "rectangle.split.2x1") }
-                AutomationSettings().tabItem { Label("Automation", systemImage: "timer") }
+                AISettings().tabItem { Label("AI", systemImage: "sparkles") }.tag("ai")
+                StudioSettings().tabItem { Label("Studio", systemImage: "rectangle.split.2x1") }.tag("studio")
+                AutomationSettings().tabItem { Label("Automation", systemImage: "timer") }.tag("automation")
             }
-            ShortcutSettings().tabItem { Label("Shortcuts", systemImage: "command") }
-            DeviceSettings().tabItem { Label("Devices", systemImage: "laptopcomputer.and.iphone") }
-            PrivacySettings().tabItem { Label("Privacy", systemImage: "hand.raised") }
-            AboutSettings().tabItem { Label("About", systemImage: "info.circle") }
+            ShortcutSettings().tabItem { Label("Shortcuts", systemImage: "command") }.tag("shortcuts")
+            DeviceSettings().tabItem { Label("Devices", systemImage: "laptopcomputer.and.iphone") }.tag("devices")
+            PrivacySettings().tabItem { Label("Privacy", systemImage: "hand.raised") }.tag("privacy")
+            AboutSettings().tabItem { Label("About", systemImage: "info.circle") }.tag("about")
         }
         .frame(width: 640)
         .frame(minHeight: 460)
@@ -245,8 +254,7 @@ private struct StudioSettings: View {
                 Picker("When the shared Mac sends a snapshot", selection: $settings.pushBehavior) {
                     ForEach(PushBehavior.allCases) { Text($0.title).tag($0) }
                 }
-                TextField("Prompt for snapshots without a note", text: $settings.pushPrompt, axis: .vertical)
-                    .lineLimit(1...3)
+                PromptEditor(title: "Prompt for snapshots without a note", text: $settings.pushPrompt)
                 Toggle("Show answers on the shared Mac too", isOn: $settings.mirrorReplies)
             }
             Section("Connection") {
@@ -254,6 +262,25 @@ private struct StudioSettings: View {
             }
         }
         .formStyle(.grouped)
+    }
+}
+
+/// A labeled, left-aligned multi-line text field for prompts inside grouped forms.
+private struct PromptEditor: View {
+    let title: String
+    @Binding var text: String
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 6) {
+            Text(title)
+            TextEditor(text: $text)
+                .font(TandemFont.callout)
+                .scrollContentBackground(.hidden)
+                .padding(6)
+                .frame(minHeight: 60, maxHeight: 110)
+                .background(RoundedRectangle(cornerRadius: Radius.s, style: .continuous).fill(Theme.surfaceSunken.opacity(0.6)))
+                .overlay(RoundedRectangle(cornerRadius: Radius.s, style: .continuous).strokeBorder(Theme.stroke, lineWidth: 1))
+        }
     }
 }
 
@@ -298,8 +325,7 @@ private struct AutomationSettings: View {
                 }
                 .pickerStyle(.radioGroup)
                 .onChange(of: settings.autoAsk) { _, _ in model.studio.sendAutomationStatus() }
-                TextField("Prompt", text: $settings.autoPrompt, axis: .vertical)
-                    .lineLimit(2...5)
+                PromptEditor(title: "Prompt", text: $settings.autoPrompt)
                     .disabled(!settings.autoAsk)
                 Stepper("At most \(settings.maxAutoAsksPerHour) automatic questions per hour", value: $settings.maxAutoAsksPerHour, in: 1...720, step: settings.maxAutoAsksPerHour < 30 ? 1 : 10)
                     .disabled(!settings.autoAsk)

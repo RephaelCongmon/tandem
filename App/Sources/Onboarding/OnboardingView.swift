@@ -5,8 +5,24 @@ import TandemUI
 /// First-run flow: welcome → choose a role → set up (permissions or AI) → pair.
 struct OnboardingView: View {
     @Environment(AppModel.self) private var model
-    @State private var step: Step = .welcome
-    @State private var role: AppRole = .studio
+    @State private var step: Step = OnboardingView.initialStep
+    @State private var role: AppRole = OnboardingView.initialRole
+
+    private static var initialStep: Step {
+        #if DEBUG
+        return Step(rawValue: UserDefaults.standard.integer(forKey: "TandemOnboardingStep")) ?? .welcome
+        #else
+        return .welcome
+        #endif
+    }
+
+    private static var initialRole: AppRole {
+        #if DEBUG
+        return UserDefaults.standard.string(forKey: "TandemOnboardingRole").flatMap(AppRole.init(rawValue:)) ?? .studio
+        #else
+        return .studio
+        #endif
+    }
 
     enum Step: Int, CaseIterable { case welcome, role, setup, pair }
 
@@ -218,11 +234,14 @@ private struct RoleStep: View {
                     Text(role.detail)
                         .font(TandemFont.callout)
                         .foregroundStyle(Theme.textSecondary)
-                        .fixedSize(horizontal: false, vertical: true)
-                        .frame(maxWidth: .infinity, alignment: .leading)
+                        .lineLimit(4)
+                        .multilineTextAlignment(.leading)
+                        .frame(maxWidth: .infinity, alignment: .topLeading)
+                    Spacer(minLength: 0)
                 }
                 .padding(Spacing.l)
-                .frame(maxWidth: .infinity, minHeight: 170, alignment: .topLeading)
+                .frame(maxWidth: .infinity)
+                .frame(height: 172, alignment: .topLeading)
                 .background(RoundedRectangle(cornerRadius: Radius.l, style: .continuous).fill(Theme.surfaceRaised.opacity(hovering || isSelected ? 1 : 0.6)))
                 .overlay(
                     RoundedRectangle(cornerRadius: Radius.l, style: .continuous)

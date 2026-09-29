@@ -143,11 +143,17 @@ final class CaptureService: NSObject, @unchecked Sendable {
             if !hasScreenRecordingPermission { throw CaptureError.permissionDenied }
             throw error
         }
-        result.append(contentsOf: CameraCapture.availableCameras())
-        #if DEBUG
-        result.append(TestPatternGenerator.descriptor)
-        #endif
+        result.append(contentsOf: nonScreenSources())
         return result
+    }
+
+    /// Sources that work without Screen Recording permission.
+    static func nonScreenSources() -> [CaptureSourceDescriptor] {
+        var sources = CameraCapture.availableCameras()
+        #if DEBUG
+        sources.append(TestPatternGenerator.descriptor)
+        #endif
+        return sources
     }
 
     // MARK: Streaming

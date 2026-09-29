@@ -82,6 +82,14 @@ private struct SourceStatusPill: View {
 struct SourcePicker: View {
     @Environment(AppModel.self) private var model
 
+    private var pickerTitle: String {
+        let source = model.source
+        if let title = source.current?.title { return title }
+        if let selected = source.selectedSource, let match = source.catalog.first(where: { $0.source == selected }) { return match.title }
+        if !source.hasScreenPermission && CaptureService.requiresScreenPermission(source.selectedSource) { return "Screen Recording Needed" }
+        return "Choose What to Share"
+    }
+
     var body: some View {
         let source = model.source
         Menu {
@@ -106,7 +114,7 @@ struct SourcePicker: View {
             Divider()
             Button("Refresh") { Task { await source.refreshCatalog() } }
         } label: {
-            Label(source.current?.title ?? "Choose What to Share", systemImage: source.selectedSource?.kind.systemImage ?? "display")
+            Label(pickerTitle, systemImage: source.selectedSource?.kind.systemImage ?? "display")
         }
         .help("Choose what to share")
     }
@@ -126,11 +134,14 @@ private struct SourcePreviewPanel: View {
                 Image(decorative: thumbnail, scale: 1)
                     .resizable()
                     .aspectRatio(contentMode: .fit)
-                    .opacity(0.55)
-                    .blur(radius: 1.5)
+                    .opacity(0.6)
+                    .blur(radius: 6)
             }
             if !source.isStreaming {
                 idleOverlay
+                    .padding(Spacing.m)
+                    .tandemGlass(cornerRadius: Radius.xl)
+                    .padding(Spacing.xl)
             }
         }
         .overlay(alignment: .topLeading) {

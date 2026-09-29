@@ -58,11 +58,42 @@ enum DebugCommands {
             model.toasts.show(argument, systemImage: "sparkles")
         case "dump":
             dump(model: model)
+        case "snap":
+            snapshotWindows(name: argument.isEmpty ? "window" : argument)
         case "quit":
             NSApp.terminate(nil)
         default:
             NSLog("Tandem debug: unknown command \(command)")
         }
+    }
+
+    /// Renders every visible window (and attached sheet) to PNG and uploads it to
+    /// the local QA server (`scripts/mock_ai_server.py`), which saves it to /tmp/tandem-qa.
+    private static func snapshotWindows(name: String) {
+        let profile = AppEnvironment.profile ?? "default"
+        var index = 0
+        for window in NSApp.windows where window.isVisible && window.frame.width > 200 {
+            for (suffix, target) in [("", window), ("-sheet", window.attachedSheet)] {
+                guard let target, let view = target.contentView?.superview ?? target.contentView else { continue }
+                guard let rep = view.bitmapImageRepForCachingDisplay(in: view.bounds) else { continue }
+                view.cacheDisplay(in: view.bounds, to: rep)
+                guard let png = rep.representation(using: .png, properties: [:]) else { continue }
+                let file = "\(profile)-\(name)-\(index)\(suffix).png"
+                upload(png, as: file)
+            }
+            index += 1
+        }
+    }
+
+    private static func upload(_ data: Data, as name: String) {
+        guard let base = AppEnvironment.debugAIBaseURL ?? URL(string: "http://127.0.0.1:18765/v1/"),
+              var components = URLComponents(url: base, resolvingAgainstBaseURL: false) else { return }
+        components.path = "/upload/\(name)"
+        guard let url = components.url else { return }
+        var request = URLRequest(url: url)
+        request.httpMethod = "POST"
+        request.httpBody = data
+        URLSession.shared.dataTask(with: request).resume()
     }
 
     /// Writes a state snapshot to the container's tmp directory.

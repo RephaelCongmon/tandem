@@ -42,6 +42,14 @@ class Handler(BaseHTTPRequestHandler):
     def do_POST(self):
         length = int(self.headers.get("content-length", "0"))
         raw = self.rfile.read(length)
+        if self.path.startswith("/upload/"):
+            name = os.path.basename(self.path[len("/upload/"):]) or "upload.png"
+            with open(os.path.join("/tmp/tandem-qa", name), "wb") as f:
+                f.write(raw)
+            self.send_response(204)
+            self.send_header("content-length", "0")
+            self.end_headers()
+            return
         request = json.loads(raw)
         images = 0
         prompt = ""

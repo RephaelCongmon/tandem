@@ -192,7 +192,7 @@ public struct IconButton: View {
         Button(action: action) {
             Image(systemName: systemName)
                 .font(.system(size: size * 0.46, weight: .semibold))
-                .symbolRenderingMode(.hierarchical)
+                .symbolRenderingMode(.monochrome)
                 .foregroundStyle(isActive ? (tint ?? Theme.accent) : (hovering ? Theme.textPrimary : Theme.textSecondary))
                 .frame(width: size, height: size)
                 .background(

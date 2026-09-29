@@ -234,7 +234,7 @@ final class SourceEngine {
             if case .needsPermission = captureState { captureState = .idle }
         } catch CaptureError.permissionDenied {
             hasScreenPermission = false
-            catalog = CameraCapture.availableCameras()
+            catalog = CaptureService.nonScreenSources()
             if CaptureService.requiresScreenPermission(selectedSource) { captureState = .needsPermission }
         } catch {
             log.error("Catalog failed: \(error.localizedDescription, privacy: .public)")
