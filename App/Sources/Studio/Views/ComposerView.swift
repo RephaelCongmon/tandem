@@ -1,0 +1,339 @@
+import AppKit
+import SwiftUI
+import TandemCore
+import TandemUI
+import UniformTypeIdentifiers
+
+struct ComposerView: View {
+    @Environment(AppModel.self) private var model
+    @FocusState private var focused: Bool
+    @State private var editing: ComposerAttachment?
+    @State private var dropTargeted = false
+
+    static let quickPrompts: [(icon: String, title: String, prompt: String)] = [
+        ("eye", "Explain the screen", "Explain what's on my screen right now."),
+        ("ladybug", "Fix this error", "There's an error on my screen. What's causing it and how do I fix it?"),
+        ("text.alignleft", "Summarize", "Summarize what's on my screen in a few bullet points."),
+        ("arrow.forward.circle", "What next?", "Based on my screen, what should I do next?"),
+        ("doc.text.viewfinder", "Extract text", "Transcribe all the text visible on my screen, preserving structure."),
+        ("character.bubble", "Translate", "Translate the text on my screen into English."),
+        ("paintbrush", "Design review", "Review the design on my screen and suggest concrete improvements.")
+    ]
+
+    var body: some View {
+        @Bindable var chat = model.chat
+        VStack(alignment: .leading, spacing: 8) {
+            if !chat.composerAttachments.isEmpty || model.studio.isConnected {
+                attachmentsRow
+            }
+            HStack(alignment: .bottom, spacing: 8) {
+                quickPromptMenu
+                TextField(placeholder, text: $chat.composerText, axis: .vertical)
+                    .textFieldStyle(.plain)
+                    .font(.system(size: 14))
+                    .lineLimit(1...8)
+                    .focused($focused)
+                    .onSubmit(send)
+                    .padding(.vertical, 6)
+                    .disabled(chat.isCapturingForSend)
+                sendButton
+            }
+            HStack(spacing: 6) {
+                Text(hint)
+                    .font(TandemFont.caption)
+                    .foregroundStyle(Theme.textTertiary)
+                Spacer()
+                if model.settings.autoCaptureEnabled, let result = model.studio.lastAutoResult {
+                    Label(result, systemImage: "timer")
+                        .font(TandemFont.caption)
+                        .foregroundStyle(Theme.textTertiary)
+                        .lineLimit(1)
+                }
+            }
+        }
+        .padding(.horizontal, 14)
+        .padding(.top, 10)
+        .padding(.bottom, 8)
+        .background(RoundedRectangle(cornerRadius: Radius.l, style: .continuous).fill(Theme.surfaceRaised))
+        .overlay(
+            RoundedRectangle(cornerRadius: Radius.l, style: .continuous)
+                .strokeBorder(dropTargeted ? Theme.accent : (focused ? Theme.accent.opacity(0.45) : Theme.stroke), lineWidth: dropTargeted ? 2 : 1)
+        )
+        .padding(Spacing.m)
+        .onDrop(of: [.image, .fileURL], isTargeted: $dropTargeted, perform: handleDrop)
+        .sheet(item: $editing) { attachment in
+            MarkupEditorSheet(attachment: attachment)
+                .environment(model)
+        }
+        .onAppear { focused = true }
+    }
+
+    private var placeholder: String {
+        if let name = model.studio.sourceName, model.studio.isConnected {
+            return model.chat.attachLiveSnapshot ? "Ask about \(name)'s screen…" : "Message…"
+        }
+        return "Ask anything…"
+    }
+
+    private var hint: String {
+        if model.chat.isCapturingForSend { return "Capturing the screen…" }
+        if model.chat.streaming != nil { return "Answering… press ⌘. to stop" }
+        return "↩ to send · ⌥↩ for a new line"
+    }
+
+    private var canSend: Bool {
+        let chat = model.chat
+        let hasText = !chat.composerText.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+        return !chat.isBusy && (hasText || !chat.composerAttachments.isEmpty || (chat.attachLiveSnapshot && model.studio.canCapture))
+    }
+
+    private func send() {
+        guard canSend else { return }
+        model.chat.sendFromComposer()
+    }
+
+    // MARK: Pieces
+
+    private var attachmentsRow: some View {
+        @Bindable var chat = model.chat
+        return ScrollView(.horizontal, showsIndicators: false) {
+            HStack(spacing: 8) {
+                if model.studio.isConnected {
+                    LiveToggleChip(isOn: $chat.attachLiveSnapshot, enabled: model.studio.canCapture)
+                }
+                ForEach(chat.composerAttachments) { item in
+                    ComposerThumbnail(item: item) {
+                        editing = item
+                    } onRemove: {
+                        chat.removeFromComposer(item.id)
+                    }
+                }
+                if model.studio.isConnected {
+                    Button {
+                        model.studio.captureToComposer()
+                    } label: {
+                        Image(systemName: model.studio.isCapturing ? "hourglass" : "plus.viewfinder")
+                            .font(.system(size: 14, weight: .semibold))
+                            .foregroundStyle(Theme.textSecondary)
+                            .frame(width: 40, height: 40)
+                            .background(RoundedRectangle(cornerRadius: Radius.s, style: .continuous).strokeBorder(Theme.strokeStrong, style: StrokeStyle(lineWidth: 1, dash: [4, 3])))
+                    }
+                    .buttonStyle(.plain)
+                    .disabled(!model.studio.canCapture)
+                    .help("Capture now to annotate before sending (⇧⌘S)")
+                }
+            }
+            .padding(.vertical, 2)
+        }
+    }
+
+    private var quickPromptMenu: some View {
+        Menu {
+            ForEach(Self.quickPrompts, id: \.title) { item in
+                Button {
+                    model.chat.composerText = item.prompt
+                    send()
+                } label: {
+                    Label(item.title, systemImage: item.icon)
+                }
+            }
+        } label: {
+            Image(systemName: "sparkles")
+                .font(.system(size: 14, weight: .semibold))
+                .foregroundStyle(Theme.accentGradient)
+                .frame(width: 28, height: 30)
+        }
+        .menuStyle(.button)
+        .buttonStyle(.plain)
+        .menuIndicator(.hidden)
+        .fixedSize()
+        .disabled(model.chat.isBusy)
+        .help("Quick prompts")
+    }
+
+    @ViewBuilder
+    private var sendButton: some View {
+        if model.chat.streaming != nil {
+            Button {
+                model.chat.stop()
+            } label: {
+                Image(systemName: "stop.fill")
+                    .font(.system(size: 11, weight: .bold))
+                    .foregroundStyle(.white)
+                    .frame(width: 30, height: 30)
+                    .background(Circle().fill(Theme.textSecondary))
+            }
+            .buttonStyle(.plain)
+            .keyboardShortcut(".", modifiers: .command)
+            .help("Stop (⌘.)")
+        } else if model.chat.isCapturingForSend {
+            ProgressView().controlSize(.small).frame(width: 30, height: 30)
+        } else {
+            Button(action: send) {
+                Image(systemName: "arrow.up")
+                    .font(.system(size: 13, weight: .bold))
+                    .foregroundStyle(.white)
+                    .frame(width: 30, height: 30)
+                    .background(Circle().fill(canSend ? AnyShapeStyle(Theme.accentGradient) : AnyShapeStyle(Theme.strokeStrong)))
+            }
+            .buttonStyle(.plain)
+            .disabled(!canSend)
+            .help("Send (↩)")
+        }
+    }
+
+    private func handleDrop(_ providers: [NSItemProvider]) -> Bool {
+        var handled = false
+        for provider in providers {
+            if provider.canLoadObject(ofClass: NSImage.self) {
+                handled = true
+                _ = provider.loadObject(ofClass: NSImage.self) { object, _ in
+                    guard let image = object as? NSImage,
+                          let cgImage = image.cgImage(forProposedRect: nil, context: nil, hints: nil) else { return }
+                    onMain { addDropped(cgImage, title: "Dropped image") }
+                }
+            } else if provider.hasItemConformingToTypeIdentifier(UTType.fileURL.identifier) {
+                handled = true
+                _ = provider.loadObject(ofClass: URL.self) { url, _ in
+                    guard let url, let data = try? Data(contentsOf: url), let image = ImageCodec.decode(data) else { return }
+                    let name = url.lastPathComponent
+                    onMain { addDropped(image, title: name) }
+                }
+            }
+        }
+        return handled
+    }
+
+    private func addDropped(_ image: CGImage, title: String) {
+        guard let encoded = ImageCodec.jpeg(image, quality: 0.9, maxDimension: 2576) else { return }
+        let header = SnapshotHeader(
+            id: UUID(), trigger: .manual, note: nil, pixelWidth: encoded.width, pixelHeight: encoded.height,
+            byteCount: encoded.data.count, chunkCount: 1, mimeType: "image/jpeg", capturedAt: Date(), captureTitle: title
+        )
+        model.chat.addToComposer(ReceivedSnapshot(header: header, data: encoded.data, transferSeconds: 0), sourceName: "This Mac")
+    }
+}
+
+private struct LiveToggleChip: View {
+    @Binding var isOn: Bool
+    let enabled: Bool
+
+    var body: some View {
+        Button {
+            isOn.toggle()
+        } label: {
+            HStack(spacing: 6) {
+                Image(systemName: isOn ? "record.circle" : "circle.dashed")
+                    .foregroundStyle(isOn ? Theme.live : Theme.textTertiary)
+                VStack(alignment: .leading, spacing: 0) {
+                    Text("Live screen").font(.system(size: 11.5, weight: .semibold))
+                    Text(isOn ? "Attached on send" : "Not attached").font(TandemFont.micro).foregroundStyle(Theme.textTertiary)
+                }
+            }
+            .padding(.horizontal, 10)
+            .frame(height: 40)
+            .background(RoundedRectangle(cornerRadius: Radius.s, style: .continuous).fill(isOn ? Theme.live.opacity(0.1) : Color.primary.opacity(0.04)))
+            .overlay(RoundedRectangle(cornerRadius: Radius.s, style: .continuous).strokeBorder(isOn ? Theme.live.opacity(0.35) : Theme.stroke, lineWidth: 1))
+        }
+        .buttonStyle(.plain)
+        .opacity(enabled ? 1 : 0.5)
+        .help(isOn ? "A fresh screenshot of the shared Mac is attached when you send" : "Send without a new screenshot")
+    }
+}
+
+private struct ComposerThumbnail: View {
+    let item: ComposerAttachment
+    let onEdit: () -> Void
+    let onRemove: () -> Void
+    @State private var hovering = false
+
+    var body: some View {
+        ZStack(alignment: .topTrailing) {
+            Image(nsImage: item.thumbnail)
+                .resizable()
+                .aspectRatio(contentMode: .fill)
+                .frame(width: 64, height: 40)
+                .clipShape(RoundedRectangle(cornerRadius: Radius.s, style: .continuous))
+                .overlay(RoundedRectangle(cornerRadius: Radius.s, style: .continuous).strokeBorder(Theme.strokeStrong, lineWidth: 0.5))
+                .overlay(alignment: .bottomLeading) {
+                    if item.attachment.isEdited {
+                        Image(systemName: "pencil.tip.crop.circle.fill")
+                            .font(.system(size: 11))
+                            .foregroundStyle(.white, Theme.accent)
+                            .padding(2)
+                    } else if item.isAutomatic {
+                        Image(systemName: "timer")
+                            .font(.system(size: 9, weight: .bold))
+                            .foregroundStyle(.white)
+                            .padding(3)
+                            .background(Circle().fill(Theme.accentSecondary))
+                            .padding(2)
+                    }
+                }
+                .onTapGesture(perform: onEdit)
+            if hovering {
+                Button(action: onRemove) {
+                    Image(systemName: "xmark.circle.fill")
+                        .font(.system(size: 14))
+                        .symbolRenderingMode(.palette)
+                        .foregroundStyle(.white, .black.opacity(0.7))
+                }
+                .buttonStyle(.plain)
+                .offset(x: 5, y: -5)
+                .help("Remove")
+            }
+        }
+        .onHover { hovering = $0 }
+        .help("Click to annotate, crop or redact")
+    }
+}
+
+/// Presents the markup editor for one composer attachment.
+private struct MarkupEditorSheet: View {
+    @Environment(AppModel.self) private var model
+    @Environment(\.dismiss) private var dismiss
+    let attachment: ComposerAttachment
+    @State private var image: CGImage?
+
+    var body: some View {
+        Group {
+            if let image {
+                SnapshotEditorView(image: image, document: initialDocument) {
+                    dismiss()
+                } onDone: { document, rendered in
+                    apply(document: document, rendered: rendered)
+                    dismiss()
+                }
+            } else {
+                ProgressView().frame(width: 300, height: 200)
+            }
+        }
+        .frame(minWidth: 960, idealWidth: 1200, minHeight: 640, idealHeight: 820)
+        .task {
+            let data = attachment.originalData
+            image = await Task.detached(priority: .userInitiated) { ImageCodec.decode(data) }.value
+        }
+    }
+
+    private var initialDocument: MarkupDocument {
+        guard let data = attachment.markup?.data, let document = try? JSONDecoder().decode(MarkupDocument.self, from: data) else {
+            return MarkupDocument()
+        }
+        return document
+    }
+
+    private func apply(document: MarkupDocument, rendered: CGImage) {
+        let id = attachment.id
+        let chat = model.chat
+        if document.isEmpty {
+            chat.applyMarkup(to: id, rendered: attachment.originalData, width: rendered.width, height: rendered.height, markup: nil)
+            return
+        }
+        let box = (try? JSONEncoder().encode(document)).map(MarkupDocumentBox.init)
+        Task {
+            let encoded = await Task.detached(priority: .userInitiated) { ImageCodec.jpeg(rendered, quality: 0.92) }.value
+            guard let encoded else { return }
+            chat.applyMarkup(to: id, rendered: encoded.data, width: encoded.width, height: encoded.height, markup: box)
+        }
+    }
+}
