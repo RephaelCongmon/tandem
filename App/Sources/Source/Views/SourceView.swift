@@ -381,6 +381,11 @@ private struct SendCard: View {
 private struct ReplyCard: View {
     let reply: ReplyMirror
 
+    static func displayName(for model: String) -> String {
+        let presets = AIProviderKind.allCases.flatMap { ModelCatalog.presets(for: $0) }
+        return presets.first { $0.id == model }?.displayName ?? model
+    }
+
     var body: some View {
         Card(title: "Latest answer", trailing: reply.isFinal ? nil : AnyView(ProgressView().controlSize(.mini))) {
             VStack(alignment: .leading, spacing: Spacing.s) {
@@ -396,7 +401,7 @@ private struct ReplyCard: View {
                     MarkdownView(reply.text, style: .compact)
                 }
                 if let model = reply.model {
-                    Text(model).font(TandemFont.micro).foregroundStyle(Theme.textTertiary)
+                    Text(Self.displayName(for: model)).font(TandemFont.micro).foregroundStyle(Theme.textTertiary)
                 }
             }
         }

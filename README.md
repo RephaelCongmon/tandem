@@ -86,6 +86,8 @@ open App/Tandem.xcodeproj     # after scripts/test_all.sh or `cd App && xcodegen
 scripts/build-release.sh     # signed Release build → dist/Tandem-<version>.zip and .dmg
 ```
 
+For public distribution, sign with a **Developer ID Application** certificate (set `CODE_SIGN_IDENTITY` in `App/project.yml`) and notarize; the default Apple Development signing is for running on your own Macs.
+
 The project uses a SwiftPM package (`Core/`: `TandemCore` + `TandemUI`) consumed by an XcodeGen-generated app target (`App/`). Run `xcodegen generate` in `App/` after adding files. Signing uses the Apple Development team configured in `App/project.yml`; notarize release builds with `xcrun notarytool`.
 
 ### Developing on one Mac
