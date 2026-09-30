@@ -46,7 +46,7 @@ public enum ContextBuilder {
         let eligible = messages.filter { message in
             switch message.role {
             case .user:
-                return !message.text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty || !message.attachments.isEmpty
+                return !message.text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty || !message.attachments.isEmpty || message.skill != nil
             case .assistant:
                 guard !message.text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else { return false }
                 switch message.status {
@@ -90,7 +90,11 @@ public enum ContextBuilder {
                 }
             }
             let text = message.text.trimmingCharacters(in: .whitespacesAndNewlines)
-            if !text.isEmpty { parts.append(.text(text)) }
+            if role == .user, let skill = message.skill {
+                parts.append(.text(skill.prompt(with: text)))
+            } else if !text.isEmpty {
+                parts.append(.text(text))
+            }
             guard !parts.isEmpty else { continue }
 
             if let last = turns.last, last.role == role {

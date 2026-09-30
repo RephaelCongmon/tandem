@@ -117,6 +117,14 @@ struct TandemCommands: Commands {
                     model.studio.livePreviewEnabled.toggle()
                 }
                 .keyboardShortcut("l", modifiers: [.command, .shift])
+                if !model.settings.skills.isEmpty {
+                    Divider()
+                    ForEach(Array(model.settings.skills.prefix(9).enumerated()), id: \.element.id) { index, skill in
+                        Button(skill.title) { model.chat.send(skill: skill) }
+                            .keyboardShortcut(KeyEquivalent(Character(String(index + 1))), modifiers: .command)
+                            .disabled(model.chat.isBusy)
+                    }
+                }
                 Divider()
                 Button("Stop Answering") { model.chat.stop() }
                     .keyboardShortcut(".")

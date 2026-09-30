@@ -37,6 +37,7 @@ It's built for moments like: your work laptop can't run AI tools but your person
 - Press the capture button (or ⇧⌘S) to grab a screenshot into the composer, then click it to **annotate, crop or redact** before sending.
 - **Ask** (⇧⌘↩) captures and asks in one step using your typed text or the default prompt. Quick prompts live behind the ✦ menu.
 - The ⏱ control turns on **auto-capture** and sets the interval; the menu also chooses whether each capture asks the AI or just updates the composer, and whether to skip unchanged screens.
+- **Skills** are one-click buttons above the message field: **Debug**, **New Problem** and **Follow-up** to start with. Each one sends a fresh screenshot plus that skill's detailed instructions, and anything you've typed goes along as extra context. The thread shows just the skill's name. ⌘1–⌘9 trigger the first nine. Add, edit and reorder skills in Settings › Skills, or with the ⚙ button next to them.
 - The toolbar model menu switches provider, model and reasoning effort. The **Reasoning** chip under the message field changes the reasoning level (Fast, Balanced, Thorough, Deep, Maximum) from your next question on, offering only the levels the current model supports.
 - The **Source** menu on the live view lets you choose which display, window or camera the other Mac shares (if it allows that).
 

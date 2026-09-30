@@ -34,6 +34,21 @@ final class AppModel {
     /// Set by the first SwiftUI view that appears; opens (or reopens) the main window.
     @ObservationIgnored var openMainWindowAction: (() -> Void)?
     @ObservationIgnored var openSettingsAction: (() -> Void)?
+    /// The Settings tab to show; set it before opening Settings to land on a pane.
+    var settingsTab: String = AppModel.initialSettingsTab
+
+    private static var initialSettingsTab: String {
+        #if DEBUG
+        return UserDefaults.standard.string(forKey: "TandemSettingsTab") ?? "general"
+        #else
+        return "general"
+        #endif
+    }
+
+    func openSettings(tab: String) {
+        settingsTab = tab
+        openSettingsAction?()
+    }
 
     var chat: ChatController { studio.chat }
     var needsOnboarding: Bool { settings.role == nil }

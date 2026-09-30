@@ -4,18 +4,10 @@ import TandemUI
 
 struct SettingsView: View {
     @Environment(AppModel.self) private var model
-    @State private var tab: String = SettingsView.initialTab
-
-    private static var initialTab: String {
-        #if DEBUG
-        return UserDefaults.standard.string(forKey: "TandemSettingsTab") ?? "general"
-        #else
-        return "general"
-        #endif
-    }
 
     var body: some View {
-        TabView(selection: $tab) {
+        @Bindable var model = model
+        TabView(selection: $model.settingsTab) {
             GeneralSettings().tabItem { Label("General", systemImage: "gearshape") }.tag("general")
             if model.settings.role != .studio {
                 SharingSettings().tabItem { Label("Sharing", systemImage: "rectangle.on.rectangle.angled") }.tag("sharing")
@@ -23,6 +15,7 @@ struct SettingsView: View {
             if model.settings.role != .source {
                 AISettings().tabItem { Label("AI", systemImage: "sparkles") }.tag("ai")
                 StudioSettings().tabItem { Label("Studio", systemImage: "rectangle.split.2x1") }.tag("studio")
+                SkillSettings().tabItem { Label("Skills", systemImage: "wand.and.stars") }.tag("skills")
                 AutomationSettings().tabItem { Label("Automation", systemImage: "timer") }.tag("automation")
             }
             ShortcutSettings().tabItem { Label("Shortcuts", systemImage: "command") }.tag("shortcuts")

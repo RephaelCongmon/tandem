@@ -50,6 +50,10 @@ struct ThreadPanel: View {
             } else {
                 ThreadEmptyState()
             }
+            SkillBar()
+                .padding(.horizontal, Spacing.m + 2)
+                .padding(.top, Spacing.s)
+                .padding(.bottom, -Spacing.s)
             ComposerView()
         }
         .background(Theme.surface)

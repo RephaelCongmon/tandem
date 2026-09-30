@@ -70,12 +70,14 @@ public struct ChatMessage: Codable, Sendable, Hashable, Identifiable {
     /// Seconds from request to completion.
     public var totalSeconds: Double?
     public var notices: [String]
+    /// The skill a user message was sent with (a copy, so later edits don't rewrite history).
+    public var skill: PromptSkill?
 
     public init(
         id: UUID = UUID(), role: Role, createdAt: Date = Date(), text: String, reasoning: String? = nil,
         attachments: [SnapshotAttachment] = [], status: Status = .complete, trigger: SnapshotTrigger? = nil,
         sourceNote: String? = nil, provider: AIProviderKind? = nil, model: String? = nil, usage: AIUsage? = nil,
-        firstTokenSeconds: Double? = nil, totalSeconds: Double? = nil, notices: [String] = []
+        firstTokenSeconds: Double? = nil, totalSeconds: Double? = nil, notices: [String] = [], skill: PromptSkill? = nil
     ) {
         self.id = id
         self.role = role
@@ -92,6 +94,7 @@ public struct ChatMessage: Codable, Sendable, Hashable, Identifiable {
         self.firstTokenSeconds = firstTokenSeconds
         self.totalSeconds = totalSeconds
         self.notices = notices
+        self.skill = skill
     }
 
     public var isStreaming: Bool {

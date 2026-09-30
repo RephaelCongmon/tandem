@@ -280,17 +280,27 @@ final class ChatController {
 
     /// Sends the composer's text and attachments (plus a fresh live snapshot if enabled).
     func sendFromComposer() {
+        send(skill: nil)
+    }
+
+    /// Sends `skill` with a fresh screenshot (when Live screen is on and the skill wants one),
+    /// anything in the composer, and the typed text as extra context.
+    func send(skill: PromptSkill) {
+        send(skill: Optional(skill))
+    }
+
+    private func send(skill: PromptSkill?) {
         guard !isBusy else { return }
         let text = composerText.trimmingCharacters(in: .whitespacesAndNewlines)
-        let wantsLive = attachLiveSnapshot && (studio?.canCapture ?? false)
-        guard !text.isEmpty || !composerAttachments.isEmpty || wantsLive else { return }
+        let wantsLive = attachLiveSnapshot && (skill?.attachesScreenshot ?? true) && (studio?.canCapture ?? false)
+        guard !text.isEmpty || !composerAttachments.isEmpty || wantsLive || skill != nil else { return }
         let attachments = composerAttachments.map(\.attachment)
         composerText = ""
         composerAttachments.removeAll()
         banner = nil
 
         guard wantsLive, let studio else {
-            submit(text: text, attachments: attachments, trigger: nil, sourceNote: nil)
+            submit(text: text, attachments: attachments, trigger: nil, sourceNote: nil, skill: skill)
             return
         }
         isCapturingForSend = true
@@ -300,10 +310,10 @@ final class ChatController {
                 let snapshot = try await studio.requestSnapshot(trigger: .composer)
                 let attachment = makeAttachment(from: snapshot, sourceName: studio.sourceName)
                 snapshots.put(snapshot.data, id: attachment.id)
-                submit(text: text, attachments: attachments + [attachment], trigger: .composer, sourceNote: nil)
+                submit(text: text, attachments: attachments + [attachment], trigger: .composer, sourceNote: nil, skill: skill)
             } catch {
                 banner = "Sent without a new screenshot: \(error.localizedDescription)"
-                submit(text: text, attachments: attachments, trigger: nil, sourceNote: nil)
+                submit(text: text, attachments: attachments, trigger: nil, sourceNote: nil, skill: skill)
             }
         }
     }
@@ -325,13 +335,13 @@ final class ChatController {
         submit(text: prompt, attachments: attachments, trigger: trigger, sourceNote: sourceNote)
     }
 
-    private func submit(text: String, attachments: [SnapshotAttachment], trigger: SnapshotTrigger?, sourceNote: String?) {
+    private func submit(text: String, attachments: [SnapshotAttachment], trigger: SnapshotTrigger?, sourceNote: String?, skill: PromptSkill? = nil) {
         let threadID = selectedThread.map(\.id) ?? newThread()
-        let message = ChatMessage(role: .user, text: text, attachments: attachments, trigger: trigger, sourceNote: sourceNote)
+        let message = ChatMessage(role: .user, text: text, attachments: attachments, trigger: trigger, sourceNote: sourceNote, skill: skill)
         mutate(threadID) { thread in
             thread.messages.append(message)
             if !thread.hasCustomTitle, thread.messages.filter({ $0.role == .user }).count == 1 {
-                let seed = text.isEmpty ? (sourceNote ?? "") : text
+                let seed = [skill?.title, text.isEmpty ? sourceNote : text].compactMap { $0 }.filter { !$0.isEmpty }.joined(separator: ": ")
                 thread.title = ChatThread.autoTitle(for: seed, fallbackDate: message.createdAt)
             }
         }
@@ -549,6 +559,7 @@ final class ChatController {
                 lines.append("_\(message.attachments.count) screenshot\(message.attachments.count == 1 ? "" : "s")_")
             }
             if let note = message.sourceNote { lines.append("> \(note)") }
+            if let skill = message.skill { lines.append("**\(skill.title)**") }
             lines.append(message.text)
             lines.append("")
         }

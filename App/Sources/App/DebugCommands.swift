@@ -65,6 +65,9 @@ enum DebugCommands {
             model.studio.restartAutomation()
         case "settings":
             model.openSettingsAction?()
+        case "front":
+            // Visible without taking keyboard focus from the app in use.
+            for window in NSApp.windows where window.identifier?.rawValue == "main" || window.title == "Tandem" { window.orderFrontRegardless() }
         case "close":
             for window in NSApp.windows where window.identifier?.rawValue == "main" || window.title == "Tandem" { window.close() }
         case "checkUpdates":
@@ -79,6 +82,12 @@ enum DebugCommands {
                 await model.updates.updateNow()
                 Logger(subsystem: "com.rofel.tandem", category: "Debug").notice("TANDEM-UPDATE install error=\(model.updates.installError ?? "-", privacy: .public)")
             }
+        case "skill":
+            if let index = Int(argument), model.settings.skills.indices.contains(index - 1) {
+                model.chat.send(skill: model.settings.skills[index - 1])
+            }
+        case "composerText":
+            model.chat.composerText = argument
         case "effort":
             if let effort = ReasoningEffort(rawValue: argument) { model.settings.effort = effort }
         case "claudeStatus":

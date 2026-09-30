@@ -40,6 +40,9 @@ private struct UserMessageView: View {
                     .background(RoundedRectangle(cornerRadius: Radius.l, style: .continuous).fill(Theme.accentSecondary.opacity(0.12)))
                     .help("Note typed on the shared Mac")
                 }
+                if let skill = message.skill {
+                    SkillTag(skill: skill)
+                }
                 if !message.text.isEmpty {
                     Text(message.text)
                         .font(TandemFont.body)

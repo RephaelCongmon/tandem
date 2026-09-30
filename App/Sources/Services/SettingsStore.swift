@@ -201,6 +201,8 @@ final class SettingsStore {
     var autoConnect: Bool = true { didSet { store(autoConnect, "studio.autoConnect") } }
     var lastSourceID: String? = nil { didSet { store(lastSourceID, "studio.lastSourceID") } }
     var showStage: Bool = true { didSet { store(showStage, "studio.showStage") } }
+    /// One-click skill buttons above the message field.
+    var skills: [PromptSkill] = PromptSkill.defaults { didSet { store(skills, "studio.skills") } }
 
     // MARK: Automation
     var autoCaptureEnabled: Bool = false { didSet { store(autoCaptureEnabled, "auto.enabled") } }
@@ -272,6 +274,7 @@ final class SettingsStore {
         autoConnect = load("studio.autoConnect", true)
         lastSourceID = load("studio.lastSourceID", nil)
         showStage = load("studio.showStage", true)
+        skills = load("studio.skills", PromptSkill.defaults)
         autoCaptureEnabled = load("auto.enabled", false)
         autoCaptureInterval = load("auto.interval", 30)
         onlyWhenChanged = load("auto.onlyWhenChanged", true)
