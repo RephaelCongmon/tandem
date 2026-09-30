@@ -175,6 +175,10 @@ Speech recognition uses [Parakeet TDT 0.6B v2](https://huggingface.co/nvidia/par
 Newest first. Each version is also published, with its download, on the repository's [Releases](https://github.com/RephaelCongmon/tandem/releases) page, and **Update Now** in the app installs it.
 
 <!-- update-log:start -->
+### 1.5.2 — September 30, 2026
+
+- **The local network warning now works:** 1.5.1 checked the wrong address (your router, which macOS always allows), so it missed the block macOS can apply after an update. Tandem now checks a host macOS actually blocks, shows the banner with **Open Settings**, and reconnects by itself once you switch Tandem off and back on under Privacy & Security › Local Network.
+
 ### 1.5.1 — September 30, 2026
 
 - **Reconnects after sleep, every time:** the shared Mac used to stop answering after a handful of reconnects (for example after its lid closed a few times), until Tandem was reopened on it. It now takes every reconnect. If your shared Mac is on an older version, quit and reopen Tandem on it once; the Studio then updates it.
