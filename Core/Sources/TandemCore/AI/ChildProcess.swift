@@ -124,14 +124,14 @@ final class ChildProcess: @unchecked Sendable {
         for waiter in pending { waiter.resume(returning: code) }
     }
 
-    /// Runs a short command to completion and returns its exit status and stdout, or `nil` if
-    /// it couldn't start or ran past `timeout`.
+    /// Runs a short command to completion and returns its exit status, stdout and the tail of
+    /// stderr, or `nil` if it couldn't start, ran past `timeout`, or was cancelled.
     static func run(
         _ executable: URL,
         arguments: [String],
         environment: [String: String]? = nil,
         timeout: TimeInterval
-    ) async -> (status: Int32, output: String)? {
+    ) async -> (status: Int32, output: String, errors: String)? {
         let child = ChildProcess(executable: executable, arguments: arguments, environment: environment)
         guard !Task.isCancelled, (try? child.start()) != nil else { return nil }
         child.closeInput()
@@ -151,6 +151,6 @@ final class ChildProcess: @unchecked Sendable {
         let status = await child.exitStatus()
         // A cancelled or timed-out run says nothing about the command's real answer.
         if child.didTimeOut || Task.isCancelled { return nil }
-        return (status, lines.joined(separator: "\n"))
+        return (status, lines.joined(separator: "\n"), child.errorOutput)
     }
 }

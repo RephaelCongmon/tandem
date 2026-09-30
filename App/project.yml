@@ -33,6 +33,7 @@ targets:
         LSMinimumSystemVersion: $(MACOSX_DEPLOYMENT_TARGET)
         NSHumanReadableCopyright: "© 2026 Tandem"
         NSPrincipalClass: NSApplication
+        TandemUpdateRepository: RephaelCongmon/tandem
         # Tandem listens for the other Mac with no window open; macOS must not quit it.
         NSSupportsAutomaticTermination: false
         NSLocalNetworkUsageDescription: "Tandem finds your other Mac on the local network, over peer-to-peer Wi-Fi, or through a cable so the two can share the screen securely."

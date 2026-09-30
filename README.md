@@ -51,6 +51,12 @@ The Source never needs attention after pairing. Close its window and Tandem keep
 
 The only things that put a prompt on the shared Mac are pairing a new Mac (or pairing again after one side forgot the other), and **Ask before each session** if you turn it on in Settings › Sharing. The window then comes forward with the prompt, without taking keyboard focus from the app in use.
 
+### Updates
+
+When a new version is published, a bar at the top of the window says **Tandem X is available**, with **What's New**, **Later** and **Update Now**. The menu bar popover and **Tandem › Check for Updates…** offer the same thing. **Update Now** downloads the release and checks that it's signed by the same developer. It then replaces the app (moving it into Applications if it was running from a disk image) and restarts Tandem, and the other Mac reconnects by itself. Tandem checks every six hours; turn that off in Settings › General › Updates.
+
+Releases live in the private GitHub repository, so each Mac needs read access to it. It's automatic when the [GitHub CLI](https://cli.github.com) is signed in on that Mac (`brew install gh && gh auth login`). Otherwise, paste a fine-grained access token with read-only **Contents** access to the repository in Settings › General › Updates.
+
 ### Global shortcuts (defaults — change them in Settings › Shortcuts)
 
 | Mac | Shortcut | Action |
@@ -95,7 +101,10 @@ brew install xcodegen
 scripts/test_all.sh          # core tests (300+) + app build with warnings as errors
 open App/Tandem.xcodeproj     # after scripts/test_all.sh or `cd App && xcodegen generate`
 scripts/build-release.sh     # signed Release build → dist/Tandem-<version>.zip and .dmg
+scripts/release.sh minor     # new version: bump, test, build, tag, push, GitHub release
 ```
+
+Every release gets a higher version and build number. `scripts/release.sh [patch|minor|major] ["notes"]` bumps both in `App/project.yml`, runs all tests, builds, commits and tags `vX.Y.Z`, pushes, and publishes a GitHub release with the zip and disk image. Without notes, it uses the commit subjects since the last release. That release is what **Update Now** installs.
 
 For public distribution, sign with a **Developer ID Application** certificate (set `CODE_SIGN_IDENTITY` in `App/project.yml`) and notarize; the default Apple Development signing is for running on your own Macs.
 

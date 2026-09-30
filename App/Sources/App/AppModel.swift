@@ -18,6 +18,7 @@ final class AppModel {
     let source: SourceEngine
     let studio: StudioEngine
     let claudeCode: ClaudeCodeService
+    let updates: UpdateController
     let hotkeys: HotkeyController
     let toasts = ToastCenter()
     private(set) var identity: DeviceIdentity
@@ -48,6 +49,7 @@ final class AppModel {
         self.identity = identity
         connections = ConnectionManager(settings: settings, trust: trust, identity: identity)
         source = SourceEngine(settings: settings)
+        updates = UpdateController(settings: settings)
         let claudeCode = ClaudeCodeService(settings: settings)
         self.claudeCode = claudeCode
         studio = StudioEngine(settings: settings, keys: keys, claudeCodeExecutable: { claudeCode.executable })
@@ -95,6 +97,24 @@ final class AppModel {
         #endif
         applyAppearance()
         if let role = settings.role { activate(role) }
+        updates.startAutomaticChecks()
+    }
+
+    /// "Check for Updates…": checks now and reports the outcome.
+    func checkForUpdatesInteractively() {
+        Task {
+            await updates.check()
+            if updates.latest != nil {
+                showMainWindow()
+            } else if updates.access == .none {
+                toasts.show("Add GitHub access in Settings › General to check for updates", systemImage: "key.fill", style: .warning)
+                openSettingsAction?()
+            } else if let error = updates.checkError {
+                toasts.show(error, systemImage: "exclamationmark.triangle.fill", style: .warning)
+            } else {
+                toasts.show("Tandem \(updates.currentVersion) is up to date", systemImage: "checkmark.circle.fill", style: .success)
+            }
+        }
     }
 
     /// Whether the main window should close itself as it first appears: a sharing Mac

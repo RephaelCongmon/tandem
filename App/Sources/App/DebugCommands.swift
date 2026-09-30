@@ -67,6 +67,16 @@ enum DebugCommands {
             model.openSettingsAction?()
         case "close":
             for window in NSApp.windows where window.identifier?.rawValue == "main" || window.title == "Tandem" { window.close() }
+        case "checkUpdates":
+            Task {
+                await model.updates.check()
+                Logger(subsystem: "com.rofel.tandem", category: "Debug").notice("TANDEM-UPDATE current=\(model.updates.versionDescription, privacy: .public) latest=\(model.updates.latest?.version.description ?? "none", privacy: .public) access=\(String(describing: model.updates.access), privacy: .public) error=\(model.updates.checkError ?? "-", privacy: .public)")
+            }
+        case "updateNow":
+            Task {
+                await model.updates.updateNow()
+                Logger(subsystem: "com.rofel.tandem", category: "Debug").notice("TANDEM-UPDATE install error=\(model.updates.installError ?? "-", privacy: .public)")
+            }
         case "effort":
             if let effort = ReasoningEffort(rawValue: argument) { model.settings.effort = effort }
         case "claudeStatus":

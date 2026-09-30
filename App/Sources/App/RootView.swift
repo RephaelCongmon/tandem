@@ -18,6 +18,12 @@ struct RootView: View {
             }
         }
         .background(Theme.canvas)
+        .safeAreaInset(edge: .top, spacing: 0) {
+            if model.updates.showsBar && !model.needsOnboarding {
+                UpdateBar().environment(model)
+            }
+        }
+        .animation(.easeInOut(duration: 0.2), value: model.updates.showsBar)
         .background(MainWindowConfigurator(shouldHide: { model.consumeStartsHidden() }))
         .sheet(item: incomingPairing) { request in
             IncomingPairingSheet(request: request)

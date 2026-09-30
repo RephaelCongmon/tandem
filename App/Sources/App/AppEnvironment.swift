@@ -44,6 +44,16 @@ enum AppEnvironment {
         Bundle.main.object(forInfoDictionaryKey: "CFBundleShortVersionString") as? String ?? "1.0"
     }
 
+    /// The GitHub repository ("owner/name") whose releases Tandem updates from.
+    static var updateRepository: String {
+        (Bundle.main.object(forInfoDictionaryKey: "TandemUpdateRepository") as? String).flatMap { $0.isEmpty ? nil : $0 } ?? "RephaelCongmon/tandem"
+    }
+
+    /// Automatic update checks are off for development profiles unless asked for.
+    static var updatesEnabled: Bool {
+        profile == nil || UserDefaults.standard.bool(forKey: "TandemUpdateChecks")
+    }
+
     /// Development-only: auto-approve pairing requests (never honored in Release).
     static var autoApprovePairing: Bool {
         #if DEBUG

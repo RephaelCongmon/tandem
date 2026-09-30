@@ -81,6 +81,7 @@ private struct GeneralSettings: View {
                     Text("When sharing, Tandem starts quietly in the menu bar and waits for your other Mac.")
                 }
             }
+            UpdateSettingsSection()
         }
         .formStyle(.grouped)
     }

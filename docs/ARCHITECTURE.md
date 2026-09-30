@@ -57,12 +57,16 @@
 
 Anthropic API requests use `claude-opus-5-5` by default with adaptive thinking, `output_config.effort`, automatic prompt caching (`cache_control` at the top level) and server-side refusal fallbacks (`fallbacks: "default"`). Capabilities per model live in `ModelCatalog`; unsupported parameters are dropped and retried once if a server rejects them.
 
+## Updates
+
+`UpdateController` reads the latest release of the GitHub repository named by `TandemUpdateRepository` in Info.plist. It uses a saved token through the REST API, which never forwards the token across the asset download's redirect, or else `gh release view` / `gh release download`. A release is offered when its tag's version is newer than `CFBundleShortVersionString`. **Update Now** unzips the release with `ditto` and checks the bundle ID and version. It then checks the code signature against `anchor apple generic`, the bundle ID and the running app's Team ID (`SecStaticCodeCheckValidity`, strict and nested). The app is swapped in place with `replaceItemAt`, or installed into Applications when running from a read-only disk image or a translocated path. A detached shell reopens it after this process exits. `scripts/release.sh` is the only way versions are published.
+
 ## Persistence
 
 | Data | Where |
 |---|---|
 | Settings | `UserDefaults` (per profile) |
-| API keys, pairing keys | Keychain (generic passwords, per profile) |
+| API keys, pairing keys, GitHub update token | Keychain (generic passwords, per profile) |
 | Paired device metadata | `UserDefaults` |
 | Threads | `Application Support/Tandem/Threads/<id>.json`, coalesced atomic writes |
 | Screenshots | Memory (LRU, 768 MB cap); optionally `Application Support/Tandem/Snapshots` |

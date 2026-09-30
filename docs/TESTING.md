@@ -7,7 +7,7 @@ scripts/test_all.sh
 ```
 
 It runs:
-- **333 core tests** (plus one opt-in live check). Wire codec, secure handshake (including man-in-the-middle, tamper and replay), real-TCP loopback sessions, H.264 encode→decode, image codec, context building, stores, AI clients against recorded streams, Markdown, Bluetooth stream transport, markup renderer and editor, hotkeys.
+- **346 core tests** (plus one opt-in live check). Wire codec, secure handshake (including man-in-the-middle, tamper and replay), real-TCP loopback sessions, H.264 encode→decode, image codec, context building, stores, AI clients against recorded streams, Markdown, Bluetooth stream transport, markup renderer and editor, hotkeys.
   - The Claude Code client is tested against recorded CLI output and a fake `claude` script: streaming, stdin contents, errors, a CLI that quits without reading, cancellation, and idle timeout.
   - `TANDEM_LIVE_CLAUDE=1 swift test --filter AIClaudeCodeLiveTests` (in `Core/`) checks the real installed CLI's version and sign-in.
 - **9 app tests.** Chat streaming, failure/retry, stop, snapshots, busy handling, settings persistence, hotkey overrides.
@@ -65,3 +65,4 @@ These need two real Macs (and permissions only a person can grant):
    - Try an OpenAI-compatible local server (LM Studio at `http://localhost:1234/v1`).
 9. **Sleep/wake.** Sleep the Studio, wake it: it reconnects on its own.
 10. **Background Source.** Turn on **Open at login** on the Source, log out and in: no window appears, the menu bar icon does, and the Studio connects. Clicking the Dock icon or **Open Tandem** shows the window.
+11. **Updates.** With an older version installed, **Tandem › Check for Updates…** shows the update bar. **Update Now** replaces the app and relaunches the new version; from a disk image, it installs into Applications. Without GitHub access, Settings › General › Updates explains how to add it.

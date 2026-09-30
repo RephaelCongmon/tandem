@@ -163,6 +163,7 @@ final class SettingsStore {
     var deviceName: String = "" { didSet { store(deviceName, "deviceName") } }
     var appearance: AppearancePreference = .system { didSet { store(appearance, "appearance") } }
     var showInMenuBar: Bool = true { didSet { store(showInMenuBar, "showInMenuBar") } }
+    var autoCheckUpdates: Bool = true { didSet { store(autoCheckUpdates, "updates.autoCheck") } }
     var linkPreference: LinkPreference = .automatic { didSet { store(linkPreference, "linkPreference") } }
     var bluetoothEnabled: Bool = true { didSet { store(bluetoothEnabled, "bluetoothEnabled") } }
 
@@ -238,6 +239,7 @@ final class SettingsStore {
         deviceName = load("deviceName", "")
         appearance = load("appearance", .system)
         showInMenuBar = load("showInMenuBar", true)
+        autoCheckUpdates = load("updates.autoCheck", true)
         linkPreference = load("linkPreference", .automatic)
         bluetoothEnabled = load("bluetoothEnabled", true)
         captureSource = load("source.capture", nil)

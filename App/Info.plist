@@ -47,5 +47,7 @@
 	<string>Tandem shares this Mac's screen with the other Mac you paired, only while sharing is on.</string>
 	<key>NSSupportsAutomaticTermination</key>
 	<false/>
+	<key>TandemUpdateRepository</key>
+	<string>RephaelCongmon/tandem</string>
 </dict>
 </plist>

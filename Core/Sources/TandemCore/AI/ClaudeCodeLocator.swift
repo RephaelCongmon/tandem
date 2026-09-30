@@ -31,10 +31,7 @@ public struct ClaudeCodeStatus: Sendable, Hashable {
     }
 }
 
-/// Finds the `claude` executable and checks whether it's signed in.
-///
-/// Apps don't inherit the shell's PATH, so the usual install locations are checked first and the
-/// user's login shell is asked as a last resort.
+/// Finds the `claude` executable (see ``CommandLineTool``) and checks whether it's signed in.
 public enum ClaudeCodeLocator {
     /// Where the installers put `claude`, most common first.
     public static func candidatePaths(home: String = NSHomeDirectory()) -> [String] {
@@ -51,30 +48,12 @@ public enum ClaudeCodeLocator {
 
     /// The executable at `override` or in a usual install location, without running anything.
     public static func quickLocate(override: String?, home: String = NSHomeDirectory()) -> URL? {
-        let fileManager = FileManager.default
-        if let override = override?.trimmingCharacters(in: .whitespacesAndNewlines), !override.isEmpty {
-            let path = (override as NSString).expandingTildeInPath
-            return fileManager.isExecutableFile(atPath: path) ? URL(fileURLWithPath: path) : nil
-        }
-        return candidatePaths(home: home)
-            .first { fileManager.isExecutableFile(atPath: $0) }
-            .map { URL(fileURLWithPath: $0) }
+        CommandLineTool.quickLocate(candidates: candidatePaths(home: home), override: override)
     }
 
     /// Like ``quickLocate(override:home:)``, then asks the login shell (`command -v claude`).
     public static func locate(override: String?) async -> URL? {
-        if let found = quickLocate(override: override) { return found }
-        if let override, !override.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty { return nil }
-        let shell = ProcessInfo.processInfo.environment["SHELL"].flatMap { $0.isEmpty ? nil : $0 } ?? "/bin/zsh"
-        guard let result = await ChildProcess.run(
-            URL(fileURLWithPath: shell), arguments: ["-ilc", "command -v claude"], timeout: 5
-        ), result.status == 0 else { return nil }
-        let path = result.output
-            .split(whereSeparator: \.isNewline)
-            .map { $0.trimmingCharacters(in: .whitespaces) }
-            .last { $0.hasPrefix("/") }
-        guard let path, FileManager.default.isExecutableFile(atPath: path) else { return nil }
-        return URL(fileURLWithPath: path)
+        await CommandLineTool.locate("claude", candidates: candidatePaths(), override: override)
     }
 
     /// Locates the CLI and asks it for its version and sign-in state.

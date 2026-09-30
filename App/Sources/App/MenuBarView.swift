@@ -54,6 +54,19 @@ struct MenuBarContent: View {
                     .font(TandemFont.callout)
                     .foregroundStyle(Theme.textSecondary)
             }
+            if let release = model.updates.latest {
+                Hairline()
+                HStack(spacing: 8) {
+                    Image(systemName: "arrow.down.circle.fill").foregroundStyle(Theme.accent)
+                    Text(model.updates.installPhase ?? "Tandem \(release.version.description) is available")
+                        .font(TandemFont.callout)
+                        .lineLimit(1)
+                    Spacer()
+                    Button("Update Now") { Task { await model.updates.updateNow() } }
+                        .buttonStyle(TandemButtonStyle(.primary, size: .small))
+                        .disabled(model.updates.isUpdating)
+                }
+            }
             Hairline()
             HStack {
                 Button("Open Tandem") { model.showMainWindow() }

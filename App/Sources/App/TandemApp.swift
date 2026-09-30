@@ -91,6 +91,10 @@ struct TandemCommands: Commands {
     let model: AppModel
 
     var body: some Commands {
+        CommandGroup(after: .appInfo) {
+            Button("Check for Updates…") { model.checkForUpdatesInteractively() }
+                .disabled(model.updates.isUpdating)
+        }
         CommandGroup(replacing: .newItem) {
             Button("New Thread") { model.chat.newThread() }
                 .keyboardShortcut("n")
