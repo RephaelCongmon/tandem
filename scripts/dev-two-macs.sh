@@ -5,7 +5,7 @@
 #   scripts/dev-two-macs.sh [--mock-ai PORT]
 set -euo pipefail
 ROOT="$(cd "$(dirname "$0")/.." && pwd)"
-APP="$ROOT/build/DerivedData/Build/Products/Debug/Tandem.app"
+APP="$ROOT/build/DerivedData.noindex/Build/Products/Debug/Tandem.app"
 AI_PORT="${2:-18765}"
 
 pkill -f "Tandem.app/Contents/MacOS/Tandem -TandemProfile" 2>/dev/null || true

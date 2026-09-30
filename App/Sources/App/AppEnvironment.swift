@@ -49,9 +49,23 @@ enum AppEnvironment {
         (Bundle.main.object(forInfoDictionaryKey: "TandemUpdateRepository") as? String).flatMap { $0.isEmpty ? nil : $0 } ?? "RephaelCongmon/tandem"
     }
 
-    /// Automatic update checks are off for development profiles unless asked for.
+    /// Automatic update checks are off for development builds and profiles unless asked for.
     static var updatesEnabled: Bool {
-        profile == nil || UserDefaults.standard.bool(forKey: "TandemUpdateChecks")
+        if UserDefaults.standard.bool(forKey: "TandemUpdateChecks") { return true }
+        #if DEBUG
+        return false
+        #else
+        return profile == nil
+        #endif
+    }
+
+    /// Development builds are numbered 0.0.0 (see App/project.yml).
+    static var isDevelopmentBuild: Bool {
+        #if DEBUG
+        return true
+        #else
+        return false
+        #endif
     }
 
     /// Development-only: auto-approve pairing requests (never honored in Release).

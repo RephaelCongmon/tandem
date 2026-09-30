@@ -186,7 +186,7 @@ final class UpdateInstallerTests: XCTestCase {
     func testABuiltTandemPassesItsOwnTeamCheck() throws {
         let built = URL(fileURLWithPath: #filePath)
             .deletingLastPathComponent().deletingLastPathComponent().deletingLastPathComponent().deletingLastPathComponent()
-            .appendingPathComponent("build/Release/Build/Products/Release/Tandem.app")
+            .appendingPathComponent("build/Release.noindex/Build/Products/Release/Tandem.app")
         try XCTSkipUnless(FileManager.default.fileExists(atPath: built.path), "build the Release app first (scripts/build-release.sh)")
         let team = try XCTUnwrap(CodeSignature.teamIdentifier(ofAppAt: built))
         XCTAssertNoThrow(try CodeSignature.verify(appAt: built, bundleIdentifier: "com.rofel.tandem", teamIdentifier: team))

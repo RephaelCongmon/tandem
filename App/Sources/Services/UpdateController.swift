@@ -64,7 +64,9 @@ final class UpdateController {
         return latest.version != postponed
     }
 
-    var versionDescription: String { "\(currentVersion) (\(buildNumber))" }
+    var versionDescription: String {
+        AppEnvironment.isDevelopmentBuild ? "Development build (\(currentVersion))" : "\(currentVersion) (\(buildNumber))"
+    }
 
     // MARK: Checking
 
