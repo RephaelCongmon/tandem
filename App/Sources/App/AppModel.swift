@@ -64,10 +64,16 @@ final class AppModel {
         self.identity = identity
         connections = ConnectionManager(settings: settings, trust: trust, identity: identity)
         source = SourceEngine(settings: settings)
-        updates = UpdateController(settings: settings)
+        let updates = UpdateController(settings: settings)
+        self.updates = updates
         let claudeCode = ClaudeCodeService(settings: settings)
         self.claudeCode = claudeCode
-        studio = StudioEngine(settings: settings, keys: keys, claudeCodeExecutable: { claudeCode.executable })
+        studio = StudioEngine(
+            settings: settings,
+            keys: keys,
+            claudeCodeExecutable: { claudeCode.executable },
+            speechModelMirror: Self.speechModelMirror(updates: updates)
+        )
         hotkeys = HotkeyController()
 
         connections.onEstablished = { [weak self] connection in
@@ -88,6 +94,17 @@ final class AppModel {
         connections.onNeedsDecision = { [weak self] in self?.presentForDecision() }
         source.onNeedsDecision = { [weak self] in self?.presentForDecision() }
         hotkeys.model = self
+        studio.sharedMacUpdater.toasts = toasts
+        studio.sharedMacUpdater.onSourceRestarting = { [weak self] in
+            // The shared Mac relaunches in a couple of seconds; don't wait out the backoff.
+            Task { @MainActor [weak self] in
+                for delay in [2.5, 1.5, 2, 3] {
+                    try? await Task.sleep(nanoseconds: UInt64(delay * 1_000_000_000))
+                    guard let self, !self.studio.isConnected else { return }
+                    self.connections.retryNow()
+                }
+            }
+        }
     }
 
     func start() {
@@ -148,6 +165,24 @@ final class AppModel {
         openSettingsAction = openSettings
     }
 
+    /// Fetches the speech model from Tandem's own releases (pinned and checksummed) using the
+    /// update feed's GitHub access. Without access it throws, and the model comes from Hugging Face.
+    private static func speechModelMirror(updates: UpdateController) -> ParakeetModelStore.MirrorDownload {
+        { [weak updates] destination, progress in
+            guard let updates else { throw UpdateError.accessDenied("Tandem is quitting.") }
+            let folder = destination.deletingLastPathComponent().appendingPathComponent(".zip-\(UUID().uuidString)", isDirectory: true)
+            try FileManager.default.createDirectory(at: folder, withIntermediateDirectories: true)
+            defer { try? FileManager.default.removeItem(at: folder) }
+            let mirror = ParakeetModelStore.Mirror.self
+            let archive = try await updates.downloadReleaseFile(named: mirror.assetName, tag: mirror.releaseTag, to: folder) { progress($0 * 0.97) }
+            guard try FileTools.sha256(of: archive) == mirror.sha256 else {
+                throw UpdateError.invalidPackage("The speech model download didn't match Tandem's checksum.")
+            }
+            try await FileTools.unzip(archive, to: destination)
+            progress(1)
+        }
+    }
+
     // MARK: Roles
 
     func activate(_ role: AppRole) {
@@ -163,6 +198,7 @@ final class AppModel {
             source.deactivate()
             claudeCode.refreshInBackground()
             studio.transcription.resume()
+            studio.transcription.prepareModelInBackground()
             // Once Claude Code has been found, have it running before the first question.
             Task { @MainActor [weak self] in
                 try? await Task.sleep(nanoseconds: 3_000_000_000)

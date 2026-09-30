@@ -326,6 +326,45 @@ private struct StudioSettings: View {
 
 // MARK: - Listening
 
+/// Whether the Parakeet model is on this Mac, with download and remove.
+private struct ParakeetModelRow: View {
+    @Environment(AppModel.self) private var model
+    @State private var confirmRemove = false
+
+    var body: some View {
+        let transcription = model.studio.transcription
+        LabeledContent("Speech model") {
+            HStack(spacing: 8) {
+                switch transcription.modelState {
+                case .installed:
+                    Label("Downloaded (\(Self.size))", systemImage: "checkmark.circle.fill")
+                        .foregroundStyle(Theme.success)
+                    Button("Remove…") { confirmRemove = true }
+                case .downloading(let fraction):
+                    ProgressView(value: fraction).frame(width: 120)
+                    Text("\(Int(fraction * 100))%").monospacedDigit().foregroundStyle(Theme.textSecondary)
+                case .notInstalled:
+                    Text("Not downloaded yet (\(Self.size))").foregroundStyle(Theme.textSecondary)
+                    Button("Download") { transcription.downloadModel() }
+                case .failed(let message):
+                    Text(message).foregroundStyle(Theme.warning).lineLimit(2)
+                    Button("Try Again") { transcription.downloadModel() }
+                }
+            }
+            .font(TandemFont.callout)
+        }
+        .confirmationDialog("Remove the speech model?", isPresented: $confirmRemove) {
+            Button("Remove", role: .destructive) { transcription.removeModel() }
+        } message: {
+            Text("Listen will download it again (\(Self.size)) the next time it uses Parakeet.")
+        }
+    }
+
+    private static var size: String {
+        ByteCountFormatter.string(fromByteCount: Int64(ParakeetModelStore.Mirror.size), countStyle: .file)
+    }
+}
+
 private struct ListeningSettings: View {
     @Environment(AppModel.self) private var model
     @State private var locales: [Locale] = []
@@ -336,6 +375,17 @@ private struct ListeningSettings: View {
         Form {
             Section {
                 Toggle("Transcribe the shared Mac's audio", isOn: Binding(get: { settings.listen }, set: { model.studio.setListening($0) }))
+                Picker("Speech recognition", selection: $settings.speechEngine) {
+                    Text("Parakeet — most accurate (English)").tag(SpeechEngine.parakeet)
+                    Text("Apple — built in").tag(SpeechEngine.apple)
+                }
+                .onChange(of: settings.speechEngine) { _, _ in
+                    transcription.prepareModelInBackground()
+                    transcription.restart()
+                }
+                if settings.speechEngine == .parakeet {
+                    ParakeetModelRow()
+                }
                 Picker("Language", selection: $settings.transcriptLanguage) {
                     Text("Same as this Mac (\(Self.name(of: Locale.current)))").tag("")
                     if !locales.isEmpty { Divider() }
@@ -343,7 +393,15 @@ private struct ListeningSettings: View {
                         Text(Self.name(of: locale)).tag(locale.identifier)
                     }
                 }
-                .onChange(of: settings.transcriptLanguage) { _, _ in transcription.restart() }
+                .onChange(of: settings.transcriptLanguage) { _, _ in
+                    transcription.prepareModelInBackground()
+                    transcription.restart()
+                }
+                if settings.speechEngine == .parakeet, !transcription.usesParakeet {
+                    Text("Parakeet understands English only, so Apple's recognizer is used for \(Self.name(of: transcription.locale)).")
+                        .font(TandemFont.caption)
+                        .foregroundStyle(Theme.textSecondary)
+                }
                 Toggle("Show live captions above the skills", isOn: $settings.showCaptions)
                 LabeledContent("Status") {
                     Text(statusText).foregroundStyle(Theme.textSecondary)
@@ -351,9 +409,22 @@ private struct ListeningSettings: View {
             } header: {
                 Text("Live transcript")
             } footer: {
-                Text("The shared Mac sends what it plays (a meeting or call, not Tandem's own sounds), and this Mac turns it into text on-device, about a second behind. Nothing leaves this Mac until you ask a question.")
+                Text("The shared Mac sends what it plays (a meeting or call, not Tandem's own sounds), and this Mac turns it into text on-device, about a second behind. Nothing leaves this Mac until you ask a question. Parakeet (NVIDIA, CC-BY-4.0) makes about a quarter fewer mistakes than Apple's recognizer on conversation; it's downloaded once, to this Mac only.")
                     .font(TandemFont.caption)
                     .foregroundStyle(Theme.textSecondary)
+            }
+            Section {
+                VStack(alignment: .leading, spacing: 6) {
+                    Text("Names and terms")
+                    TextField("People, companies, products, jargon — separated by commas", text: $settings.transcriptTerms, axis: .vertical)
+                        .lineLimit(2...4)
+                        .textFieldStyle(.roundedBorder)
+                    Text("Sent with the transcript so the AI spells them right when speech-to-text mishears them (\"cooper netties\" → Kubernetes).")
+                        .font(TandemFont.caption)
+                        .foregroundStyle(Theme.textSecondary)
+                }
+            } header: {
+                Text("Vocabulary")
             }
             Section {
                 Toggle("Send what was said with each question", isOn: $settings.includeTranscript)

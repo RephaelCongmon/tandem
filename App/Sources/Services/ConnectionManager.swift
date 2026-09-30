@@ -47,6 +47,10 @@ final class ConnectionManager {
     private(set) var browserState: BrowserState = .stopped
     private(set) var bluetoothState: BluetoothAvailability = .unknown
     private(set) var connectingDeviceIDs: Set<String> = []
+    /// Devices whose pending attempt is over Bluetooth; a network path that appears meanwhile
+    /// is tried at once instead of waiting for Bluetooth to time out.
+    @ObservationIgnored private var bluetoothAttempts: Set<String> = []
+    @ObservationIgnored private var networkReachableTargets: Set<String> = []
     private(set) var pendingPairing: PairingRequest?
     /// The Source the Studio wants to stay connected to.
     private(set) var desiredSourceID: String?
@@ -127,7 +131,9 @@ final class ConnectionManager {
         networkDiscoveries.removeAll()
         bluetoothDiscoveries.removeAll()
         connectingDeviceIDs.removeAll()
+        bluetoothAttempts.removeAll()
         reachableTargets.removeAll()
+        networkReachableTargets.removeAll()
         nearby = []
         pendingPairing = nil
         desiredSourceID = nil
@@ -162,6 +168,7 @@ final class ConnectionManager {
                 bluetoothDiscoveries.removeAll()
                 // Pending Bluetooth connects die with the browser.
                 connectingDeviceIDs.removeAll()
+                bluetoothAttempts.removeAll()
                 rebuildNearby()
             }
         }
@@ -425,7 +432,9 @@ final class ConnectionManager {
     }
 
     private func openConnection(to deviceID: String, forcePairing: Bool) {
-        guard connection(for: deviceID) == nil, !connectingDeviceIDs.contains(deviceID) else { return }
+        guard connection(for: deviceID) == nil else { return }
+        let networkPreempts = bluetoothAttempts.contains(deviceID) && networkDiscoveries[deviceID] != nil && settings.linkPreference != .bluetoothOnly
+        guard !connectingDeviceIDs.contains(deviceID) || networkPreempts else { return }
         let forcePairing = forcePairing || trust.needsRepair(deviceID)
         let mode: HandshakeMode = forcePairing || !trust.isTrusted(deviceID) ? .pair : .session
         let expected = nearby.first { $0.id == deviceID }?.identity ?? trust.peer(deviceID)?.identity
@@ -442,10 +451,12 @@ final class ConnectionManager {
             return
         }
         connectingDeviceIDs.insert(deviceID)
+        bluetoothAttempts.insert(deviceID)
         // Belt and braces: never leave a device stuck in "connecting".
         Task { [weak self] in
             try? await Task.sleep(nanoseconds: 25_000_000_000)
             guard let self, self.connectingDeviceIDs.remove(deviceID) != nil else { return }
+            self.bluetoothAttempts.remove(deviceID)
             self.lastFailure = (deviceID, "Couldn't reach that Mac over Bluetooth.")
             self.scheduleReconnectIfNeeded(for: deviceID)
         }
@@ -454,14 +465,17 @@ final class ConnectionManager {
                 onMain {
                     guard let self else { return }
                     self.connectingDeviceIDs.remove(deviceID)
+                    self.bluetoothAttempts.remove(deviceID)
                     switch result {
                     case .success(let transport):
-                        guard self.role == .studio, self.desiredSourceID == deviceID else {
+                        // A network connection that started meanwhile wins.
+                        guard self.role == .studio, self.desiredSourceID == deviceID, self.connection(for: deviceID) == nil else {
                             transport.queue.async { transport.close() }
                             return
                         }
                         self.startOutgoing(transport: transport, expectedPeer: expected, mode: mode)
                     case .failure(let error):
+                        guard self.connection(for: deviceID) == nil else { return }
                         self.lastFailure = (deviceID, error.localizedDescription)
                         self.scheduleReconnectIfNeeded(for: deviceID)
                     }
@@ -573,7 +587,7 @@ final class ConnectionManager {
             lastFailure = nil
         }
         rebuildNearby()
-        connection.send(.control(.hello(PeerHello(role: role?.peerRole ?? .studio, appVersion: AppEnvironment.shortVersion, capabilities: [PeerHello.Capability.audio]))))
+        connection.send(.control(.hello(PeerHello(role: role?.peerRole ?? .studio, appVersion: AppEnvironment.shortVersion, capabilities: [PeerHello.Capability.audio, PeerHello.Capability.peerUpdate]))))
         log.info("Connected to \(peer.name, privacy: .private) over \(linkKind.displayName, privacy: .public)")
         onEstablished?(connection)
     }
@@ -639,13 +653,19 @@ final class ConnectionManager {
     private func maybeAutoConnect() {
         guard role == .studio, let target = desiredSourceID else {
             reachableTargets.removeAll()
+            networkReachableTargets.removeAll()
             return
         }
-        let reachable = networkDiscoveries[target] != nil || (settings.bluetoothEnabled && bluetoothDiscoveries[target] != nil)
-        let newlyAppeared = reachable && !reachableTargets.contains(target)
+        let onNetwork = networkDiscoveries[target] != nil
+        let reachable = onNetwork || (settings.bluetoothEnabled && bluetoothDiscoveries[target] != nil)
+        let newlyOnNetwork = onNetwork && !networkReachableTargets.contains(target)
+        let newlyAppeared = (reachable && !reachableTargets.contains(target)) || newlyOnNetwork
         if reachable { reachableTargets.insert(target) } else { reachableTargets.remove(target) }
+        if onNetwork { networkReachableTargets.insert(target) } else { networkReachableTargets.remove(target) }
+        // A slow Bluetooth attempt doesn't block a network path that just showed up.
+        let networkPreempts = newlyOnNetwork && bluetoothAttempts.contains(target)
         guard reachable, trust.isTrusted(target), !trust.needsRepair(target),
-              connection(for: target) == nil, !connectingDeviceIDs.contains(target) else { return }
+              connection(for: target) == nil, !connectingDeviceIDs.contains(target) || networkPreempts else { return }
         if reconnectTask != nil {
             guard newlyAppeared else { return }
             reconnectTask?.cancel()

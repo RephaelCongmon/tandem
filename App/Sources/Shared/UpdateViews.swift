@@ -137,6 +137,20 @@ struct UpdateSettingsSection: View {
                 .font(TandemFont.caption)
                 .foregroundStyle(tokenStatus == nil ? Theme.textSecondary : Theme.textPrimary)
                 .fixedSize(horizontal: false, vertical: true)
+            if settings.role == .studio {
+                SharedMacUpdateRow()
+                Toggle("Keep the shared Mac up to date", isOn: $settings.updateSharedMac)
+                Text("When the shared Mac connects with an older Tandem, this Mac sends it this version over the encrypted link. The shared Mac checks it's signed by the same developer, installs it and restarts, so it never needs GitHub access of its own.")
+                    .font(TandemFont.caption)
+                    .foregroundStyle(Theme.textSecondary)
+                    .fixedSize(horizontal: false, vertical: true)
+            } else if settings.role == .source {
+                Toggle("Install updates sent by the other Mac", isOn: $settings.acceptPeerUpdates)
+                Text("The Mac you ask from sends newer versions of Tandem here after it updates. They're installed only if signed by the same developer, and Tandem restarts by itself.")
+                    .font(TandemFont.caption)
+                    .foregroundStyle(Theme.textSecondary)
+                    .fixedSize(horizontal: false, vertical: true)
+            }
         }
     }
 
@@ -188,5 +202,48 @@ struct UpdateSettingsSection: View {
         } catch {
             tokenStatus = error.localizedDescription
         }
+    }
+}
+
+/// The shared Mac's version, and updating it from here.
+private struct SharedMacUpdateRow: View {
+    @Environment(AppModel.self) private var model
+
+    var body: some View {
+        let updater = model.studio.sharedMacUpdater
+        let connection = model.studio.connection
+        LabeledContent("Shared Mac") {
+            HStack(spacing: 8) {
+                Text(detail).foregroundStyle(Theme.textSecondary).lineLimit(2)
+                if case .sending(let fraction) = updater.state {
+                    ProgressView(value: fraction).frame(width: 90)
+                }
+                if updater.canUpdateSource, !updater.isBusy {
+                    Button("Update It Now") { updater.updateSource() }
+                        .help(connection?.linkKind.isConstrained == true ? "Over Bluetooth this takes several minutes" : "Sends this version to the shared Mac")
+                }
+            }
+            .font(TandemFont.callout)
+        }
+    }
+
+    private var detail: String {
+        let studio = model.studio
+        let updater = studio.sharedMacUpdater
+        guard let connection = studio.connection, connection.isConnected else { return "Not connected" }
+        let name = connection.peer?.name ?? "The shared Mac"
+        switch updater.state {
+        case .preparing: return "Preparing the update…"
+        case .sending(let fraction): return "Sending to \(name)… \(Int(fraction * 100))%"
+        case .installing(let phase): return phase
+        case .restarting: return "\(name) is restarting…"
+        case .failed(let message): return message
+        case .idle, .done: break
+        }
+        guard let version = connection.peerVersion else { return name }
+        if !connection.peerAcceptsUpdates, version < updater.currentVersion {
+            return "\(name) · Tandem \(version). Update it once there with Update Now; after that this Mac keeps it up to date."
+        }
+        return version < updater.currentVersion ? "\(name) · Tandem \(version) (this Mac has \(updater.currentVersion))" : "\(name) · Tandem \(version) · up to date"
     }
 }

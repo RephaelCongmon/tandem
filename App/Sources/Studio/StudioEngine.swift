@@ -59,6 +59,8 @@ final class StudioEngine {
 
     let chat: ChatController
     let transcription: TranscriptionService
+    /// Sends this version of Tandem to an older shared Mac.
+    let sharedMacUpdater: SharedMacUpdater
     @ObservationIgnored let renderer = LiveVideoRenderer()
     @ObservationIgnored private let settings: SettingsStore
     private struct PendingSnapshot {
@@ -72,10 +74,16 @@ final class StudioEngine {
     @ObservationIgnored private var automationTask: Task<Void, Never>?
     @ObservationIgnored private let log = Logger(subsystem: "com.rofel.tandem", category: "Studio")
 
-    init(settings: SettingsStore, keys: APIKeyStore, claudeCodeExecutable: @escaping @MainActor () -> URL? = { nil }) {
+    init(
+        settings: SettingsStore,
+        keys: APIKeyStore,
+        claudeCodeExecutable: @escaping @MainActor () -> URL? = { nil },
+        speechModelMirror: ParakeetModelStore.MirrorDownload? = nil
+    ) {
         self.settings = settings
         chat = ChatController(settings: settings, keys: keys, claudeCodeExecutable: claudeCodeExecutable)
-        transcription = TranscriptionService(settings: settings)
+        transcription = TranscriptionService(settings: settings, modelMirror: speechModelMirror)
+        sharedMacUpdater = SharedMacUpdater(settings: settings)
         chat.studio = self
         chat.transcription = transcription
         renderer.onStats = { [weak self] stats in self?.liveStats = stats }
@@ -137,6 +145,7 @@ final class StudioEngine {
             self.pending[progress.id] = entry
         }
         sourceAudioStatus = nil
+        if let hello = connection.remoteHello { sharedMacUpdater.sourceConnected(connection, hello: hello) }
         sendStreamRequest()
         sendAutomationStatus()
         sendAudioRequest()
@@ -146,6 +155,7 @@ final class StudioEngine {
 
     func detach(_ connection: PeerConnection) {
         guard self.connection?.id == connection.id else { return }
+        sharedMacUpdater.sourceDisconnected(connection)
         connection.videoSink.value = nil
         connection.audioSink.value = nil
         connection.onControl = nil
@@ -180,6 +190,10 @@ final class StudioEngine {
             remoteCatalog = catalog
         case .audioStatus(let status):
             sourceAudioStatus = status
+        case .hello(let hello):
+            if let connection { sharedMacUpdater.sourceConnected(connection, hello: hello) }
+        case .updateReply, .updateStatus:
+            sharedMacUpdater.handle(message)
         case .snapshotUnchanged(let id):
             resolve(id, with: .failure(SnapshotRequestError.unchanged))
         case .snapshotFailed(let id, let reason):
@@ -231,7 +245,7 @@ final class StudioEngine {
         if case .failed(let message) = transcription.engineState { return message }
         guard let connection, connection.isConnected else { return nil }
         if connection.remoteHello != nil, !connection.peerSupportsAudio {
-            return "\(sourceName ?? "The shared Mac") needs Tandem 1.3 or later to send its audio. Update it there with Update Now."
+            return "\(sourceName ?? "The shared Mac") needs Tandem 1.3 or later to send its audio. Update it there with Update Now (from 1.4 on, this Mac updates it for you)."
         }
         guard let status = sourceAudioStatus else { return nil }
         switch status.state {

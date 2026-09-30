@@ -4,8 +4,8 @@ import os
 import TandemCore
 
 /// Live transcript of the shared Mac's computer audio: the Source sends Opus packets, and this
-/// Mac decodes them and transcribes them on-device as they arrive. New words show up about a
-/// second after they're spoken.
+/// Mac decodes them and transcribes them on-device as they arrive, with Parakeet (downloaded once)
+/// or Apple's recognizer. New words show up about a second after they're spoken.
 @MainActor
 @Observable
 final class TranscriptionService {
@@ -18,7 +18,16 @@ final class TranscriptionService {
         case failed(String)
     }
 
+    /// The Parakeet model on this Mac.
+    enum ModelState: Equatable {
+        case notInstalled
+        case downloading(Double)
+        case installed
+        case failed(String)
+    }
+
     private(set) var engineState: EngineState = .off
+    private(set) var modelState: ModelState
     private(set) var transcript = LiveTranscript()
     /// Loudness of the incoming audio for the meter, 0…1.
     private(set) var level: Double = 0
@@ -36,6 +45,8 @@ final class TranscriptionService {
     }
 
     @ObservationIgnored private let settings: SettingsStore
+    @ObservationIgnored let modelStore: ParakeetModelStore
+    @ObservationIgnored private var modelDownload: Task<Void, Never>?
     @ObservationIgnored nonisolated let pipeline = AudioPipeline()
     @ObservationIgnored private var engine: LiveSpeechTranscriber?
     @ObservationIgnored private var engineTask: Task<Void, Never>?
@@ -45,8 +56,10 @@ final class TranscriptionService {
     @ObservationIgnored private var flushedForGap = false
     @ObservationIgnored private let log = Logger(subsystem: "com.rofel.tandem", category: "Transcript")
 
-    init(settings: SettingsStore) {
+    init(settings: SettingsStore, modelMirror: ParakeetModelStore.MirrorDownload? = nil, modelsDirectory: URL = AppEnvironment.supportDirectory.appendingPathComponent("Models", isDirectory: true)) {
         self.settings = settings
+        modelStore = ParakeetModelStore(modelsDirectory: modelsDirectory, mirror: modelMirror)
+        modelState = modelStore.isInstalled ? .installed : .notInstalled
         pipeline.onLevel = { [weak self] level in
             onMain {
                 guard let self else { return }
@@ -88,15 +101,73 @@ final class TranscriptionService {
         transcript.removeAll()
     }
 
+    // MARK: Speech model
+
+    /// The language transcription uses.
+    var locale: Locale {
+        settings.transcriptLanguage.isEmpty ? Locale.current : Locale(identifier: settings.transcriptLanguage)
+    }
+
+    /// Parakeet is chosen and can transcribe the selected language.
+    var usesParakeet: Bool {
+        settings.speechEngine == .parakeet && LiveSpeech.parakeetSupports(locale)
+    }
+
+    /// Downloads the Parakeet model in the background (at launch, so it's ready before the
+    /// first meeting), unless it's already here or not needed.
+    func prepareModelInBackground() {
+        guard usesParakeet, !modelStore.isInstalled, modelDownload == nil else { return }
+        downloadModel()
+    }
+
+    func downloadModel() {
+        guard modelDownload == nil else { return }
+        modelState = .downloading(0)
+        let store = modelStore
+        modelDownload = Task(priority: .utility) { [weak self] in
+            do {
+                try await store.install { fraction in
+                    onMain { if case .downloading = self?.modelState { self?.modelState = .downloading(fraction) } }
+                }
+                self?.modelState = .installed
+                // Compile it for the Neural Engine now, so turning on Listen is quick.
+                if self?.engine == nil { await store.warmUp() }
+                self?.log.info("Speech model ready")
+            } catch {
+                let message = (error as? LocalizedError)?.errorDescription ?? error.localizedDescription
+                self?.modelState = .failed(message)
+            }
+            self?.modelDownload = nil
+        }
+    }
+
+    func removeModel() {
+        let wasRunning = engine != nil && engineName == "Parakeet"
+        if wasRunning { stopEngine() }
+        do {
+            try FileManager.default.removeItem(at: modelStore.directory)
+        } catch {
+            log.error("Couldn't remove the speech model: \(error.localizedDescription, privacy: .public)")
+        }
+        modelState = modelStore.isInstalled ? .installed : .notInstalled
+    }
+
     private func startEngine() {
         guard engine == nil, engineTask == nil else { return }
         engineGeneration += 1
         let generation = engineGeneration
-        let locale = settings.transcriptLanguage.isEmpty ? Locale.current : Locale(identifier: settings.transcriptLanguage)
-        let transcriber = LiveSpeech.makeTranscriber(locale: locale, preferLegacy: AppEnvironment.preferLegacySpeech)
+        let locale = self.locale
+        let transcriber = LiveSpeech.makeTranscriber(
+            locale: locale,
+            engine: settings.speechEngine,
+            parakeet: modelStore,
+            preferLegacy: AppEnvironment.preferLegacySpeech
+        )
         engineName = transcriber.engineName
         engineState = .preparing
         let pipeline = self.pipeline
+        // Audio that arrives while the recognizer loads is kept and replayed into it.
+        pipeline.holdAudio(true)
         engineTask = Task { [weak self] in
             do {
                 try await transcriber.start(onEvent: { event in
@@ -105,6 +176,7 @@ final class TranscriptionService {
                     onMain {
                         guard let self, self.engineGeneration == generation, fraction < 1 else { return }
                         self.engineState = .downloading(fraction)
+                        if transcriber.engineName == "Parakeet" { self.modelState = .downloading(fraction) }
                     }
                 })
                 guard let self, self.engineGeneration == generation else {
@@ -114,6 +186,7 @@ final class TranscriptionService {
                 self.engine = transcriber
                 self.engineTask = nil
                 self.engineState = .ready
+                if transcriber.engineName == "Parakeet" { self.modelState = .installed }
                 self.restartAttempts = 0
                 pipeline.attach(transcriber)
                 self.startHeartbeat()
@@ -121,6 +194,7 @@ final class TranscriptionService {
             } catch {
                 guard let self, self.engineGeneration == generation else { return }
                 self.engineTask = nil
+                pipeline.holdAudio(false)
                 let message = (error as? LocalizedError)?.errorDescription ?? error.localizedDescription
                 self.engineState = .failed(message)
                 self.log.error("Transcription couldn't start: \(message, privacy: .public)")
@@ -134,6 +208,7 @@ final class TranscriptionService {
         engineTask = nil
         heartbeat?.invalidate()
         heartbeat = nil
+        pipeline.holdAudio(false)
         pipeline.attach(nil)
         transcript.clearVolatile()
         level = 0
@@ -206,7 +281,8 @@ final class TranscriptionService {
         return transcript.excerpt(
             after: after,
             window: TimeInterval(max(1, settings.transcriptWindowMinutes) * 60),
-            sourceName: sourceName
+            sourceName: sourceName,
+            terms: TranscriptExcerpt.terms(from: settings.transcriptTerms)
         )
     }
 }
@@ -226,6 +302,11 @@ final class AudioPipeline: @unchecked Sendable {
     private var peakSinceLevelPost = -120.0
     private var lastResultEnd = 0.0
     private let caughtUp = Locked(true)
+    /// Audio kept while the recognizer starts, replayed once it's attached.
+    private var held: [(samples: [Int16], capturedAt: Date, decibels: Double)] = []
+    private var holding = false
+    /// At most this much audio is held (the rest is dropped from the front).
+    static let maxHeldSeconds = 30.0
 
     /// Silence below this (dBFS) doesn't count as speech for "caught up".
     static let speechFloor = -50.0
@@ -237,6 +318,19 @@ final class AudioPipeline: @unchecked Sendable {
             self.lastResultEnd = 0
             self.normalizer = AudioGainNormalizer()
             self.caughtUp.value = true
+            guard transcriber != nil else { return }
+            let backlog = self.held
+            self.held.removeAll()
+            self.holding = false
+            for item in backlog { self.transcribe(item.samples, capturedAt: item.capturedAt, decibels: item.decibels) }
+        }
+    }
+
+    /// While on, audio is kept until a recognizer is attached (see `attach`).
+    func holdAudio(_ hold: Bool) {
+        queue.async {
+            self.holding = hold
+            if !hold { self.held.removeAll() }
         }
     }
 
@@ -252,7 +346,7 @@ final class AudioPipeline: @unchecked Sendable {
             decoders[packet.codec] = AudioFrameDecoder(codec: packet.codec, sampleRate: packet.sampleRate)
         }
         guard let decoder = decoders[packet.codec] else { return }
-        var samples = decoder.decode(packet)
+        let samples = decoder.decode(packet)
         guard !samples.isEmpty else { return }
         let decibels = AudioLevel.rmsDecibels(samples)
         peakSinceLevelPost = max(peakSinceLevelPost, decibels)
@@ -262,8 +356,20 @@ final class AudioPipeline: @unchecked Sendable {
             lastLevelPost = now
             peakSinceLevelPost = -120
         }
+        guard transcriber != nil else {
+            if holding {
+                held.append((samples, capturedAt, decibels))
+                let limit = Int(Self.maxHeldSeconds * 10)
+                if held.count > limit { held.removeFirst(held.count - limit) }
+            }
+            return
+        }
+        transcribe(samples, capturedAt: capturedAt, decibels: decibels)
+    }
+
+    private func transcribe(_ decoded: [Int16], capturedAt: Date, decibels: Double) {
         guard let transcriber else { return }
-        samples = normalizer.process(samples)
+        let samples = normalizer.process(decoded)
         timeline.feed(sampleCount: samples.count, sampleRate: LiveAudio.sampleRate, capturedAt: capturedAt, isSilent: decibels < Self.speechFloor)
         updateCaughtUp()
         transcriber.append(samples)

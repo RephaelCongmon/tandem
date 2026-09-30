@@ -73,6 +73,8 @@ public struct PeerHello: Codable, Sendable, Hashable {
     public enum Capability {
         /// Source: can send its computer audio. Studio: can receive and transcribe it.
         public static let audio = "audio"
+        /// Source: installs a newer Tandem sent by its Studio (see `UpdateOffer`).
+        public static let peerUpdate = "update"
     }
 
     public var role: PeerRole
@@ -336,6 +338,64 @@ public struct AudioStatus: Codable, Sendable, Hashable {
     }
 }
 
+// MARK: - Updates between the Macs
+
+/// The Studio offers the Source its own, newer copy of Tandem (a zip of the signed app), so the
+/// Source never needs its own access to the release feed.
+public struct UpdateOffer: Codable, Sendable, Hashable {
+    public var id: UUID
+    public var version: String
+    public var build: String
+    public var byteCount: Int
+    /// Lowercase hex SHA-256 of the zip.
+    public var sha256: String
+
+    public init(id: UUID = UUID(), version: String, build: String, byteCount: Int, sha256: String) {
+        self.id = id
+        self.version = version
+        self.build = build
+        self.byteCount = byteCount
+        self.sha256 = sha256
+    }
+}
+
+public struct UpdateReply: Codable, Sendable, Hashable {
+    public var id: UUID
+    public var accepted: Bool
+    /// Why an offer was declined.
+    public var reason: String?
+
+    public init(id: UUID, accepted: Bool, reason: String? = nil) {
+        self.id = id
+        self.accepted = accepted
+        self.reason = reason
+    }
+}
+
+/// How the Source is getting on with an update the Studio sent.
+public struct UpdateTransferStatus: Codable, Sendable, Hashable {
+    public enum Phase: String, Codable, Sendable, Hashable {
+        case receiving
+        case verifying
+        case installing
+        /// Installed; the Source quits and reopens in a moment.
+        case restarting
+        case failed
+    }
+
+    public var id: UUID
+    public var phase: Phase
+    public var fraction: Double?
+    public var message: String?
+
+    public init(id: UUID, phase: Phase, fraction: Double? = nil, message: String? = nil) {
+        self.id = id
+        self.phase = phase
+        self.fraction = fraction
+        self.message = message
+    }
+}
+
 /// Every JSON control message exchanged over an established session.
 public enum ControlMessage: Codable, Sendable, Hashable {
     case hello(PeerHello)
@@ -354,6 +414,9 @@ public enum ControlMessage: Codable, Sendable, Hashable {
     case replyMirror(ReplyMirror)
     case audioRequest(AudioRequest)
     case audioStatus(AudioStatus)
+    case updateOffer(UpdateOffer)
+    case updateReply(UpdateReply)
+    case updateStatus(UpdateTransferStatus)
     case ping(PingPayload)
     case pong(PongPayload)
     case goodbye(reason: String)
@@ -439,6 +502,21 @@ public struct AudioPacket: Sendable, Hashable {
     }
 }
 
+/// One piece of an update package.
+public struct UpdateChunk: Sendable, Hashable {
+    public var offerID: UUID
+    public var index: Int
+    public var count: Int
+    public var data: Data
+
+    public init(offerID: UUID, index: Int, count: Int, data: Data) {
+        self.offerID = offerID
+        self.index = index
+        self.count = count
+        self.data = data
+    }
+}
+
 // MARK: - Envelope
 
 /// Everything that travels inside an established secure session.
@@ -448,6 +526,7 @@ public enum PeerMessage: Sendable, Hashable {
     case videoFrame(VideoFrame)
     case snapshotChunk(SnapshotChunk)
     case audioPacket(AudioPacket)
+    case updateChunk(UpdateChunk)
 }
 
 public enum PeerMessageCodingError: Error, Equatable {
@@ -462,6 +541,7 @@ public enum PeerMessageCodec {
         case videoFrame = 3
         case snapshotChunk = 4
         case audioPacket = 5
+        case updateChunk = 6
     }
 
     private static let encoder: JSONEncoder = {
@@ -530,6 +610,15 @@ public enum PeerMessageCodec {
                 writer.writeShortBlob(frame)
             }
             return writer.data
+
+        case .updateChunk(let chunk):
+            var writer = ByteWriter(capacity: chunk.data.count + 32)
+            writer.write(Tag.updateChunk.rawValue)
+            writer.write(chunk.offerID)
+            writer.write(UInt32(clamping: chunk.index))
+            writer.write(UInt32(clamping: chunk.count))
+            writer.write(raw: chunk.data)
+            return writer.data
         }
     }
 
@@ -595,6 +684,13 @@ public enum PeerMessageCodec {
                     throw PeerMessageCodingError.malformed("audio format")
                 }
                 return .audioPacket(AudioPacket(codec: codec, sequence: sequence, sampleRate: sampleRate, sampleCount: sampleCount, capturedAtNanos: captured, frames: frames))
+
+            case .updateChunk:
+                let id = try reader.readUUID()
+                let index = Int(try reader.readUInt32())
+                let count = Int(try reader.readUInt32())
+                guard count > 0, index < count else { throw PeerMessageCodingError.malformed("update chunk index") }
+                return .updateChunk(UpdateChunk(offerID: id, index: index, count: count, data: reader.readRemaining()))
             }
         } catch is ByteReader.ReadError {
             throw PeerMessageCodingError.malformed("truncated")

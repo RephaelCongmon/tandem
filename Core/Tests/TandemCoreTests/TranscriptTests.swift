@@ -110,6 +110,17 @@ final class LiveTranscriptTests: XCTestCase {
         XCTAssertEqual(excerpt.end, at(6))
         XCTAssertTrue(TranscriptExcerpt(segments: [], pendingText: "  ").isEmpty)
     }
+
+    func testNamesAndTermsGoWithTheTranscript() throws {
+        XCTAssertEqual(TranscriptExcerpt.terms(from: " Kubernetes, MTN Ghana\nRephael;  kubernetes ,, "), ["Kubernetes", "MTN Ghana", "Rephael"])
+        var transcript = LiveTranscript()
+        transcript.commit("How do you scale cooper netties?", start: at(0), end: at(2))
+        let excerpt = try XCTUnwrap(transcript.excerpt(after: nil, now: at(3), window: 300, terms: ["Kubernetes"]))
+        XCTAssertTrue(excerpt.contextText().hasSuffix("Names and terms that may come up; words that sound like them probably are them: Kubernetes."))
+        let none = try XCTUnwrap(transcript.excerpt(after: nil, now: at(3), window: 300))
+        XCTAssertNil(none.terms)
+        XCTAssertFalse(none.contextText().contains("Names and terms"))
+    }
 }
 
 final class TranscriptContextTests: XCTestCase {

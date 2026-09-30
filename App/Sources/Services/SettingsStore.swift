@@ -164,6 +164,8 @@ final class SettingsStore {
     var appearance: AppearancePreference = .system { didSet { store(appearance, "appearance") } }
     var showInMenuBar: Bool = true { didSet { store(showInMenuBar, "showInMenuBar") } }
     var autoCheckUpdates: Bool = true { didSet { store(autoCheckUpdates, "updates.autoCheck") } }
+    /// Studio: send this version of Tandem to the shared Mac when it runs an older one.
+    var updateSharedMac: Bool = true { didSet { store(updateSharedMac, "updates.sharedMac") } }
     var linkPreference: LinkPreference = .automatic { didSet { store(linkPreference, "linkPreference") } }
     var bluetoothEnabled: Bool = true { didSet { store(bluetoothEnabled, "bluetoothEnabled") } }
 
@@ -178,6 +180,8 @@ final class SettingsStore {
     var pauseWhenLocked: Bool = true { didSet { store(pauseWhenLocked, "source.pauseWhenLocked") } }
     var snapshotResolution: SnapshotResolution = .high { didSet { store(snapshotResolution, "source.snapshotResolution") } }
     var snapshotQuality: Double = 0.9 { didSet { store(snapshotQuality, "source.snapshotQuality") } }
+    /// Install newer versions of Tandem that the paired Studio sends (checked against the developer signature).
+    var acceptPeerUpdates: Bool = true { didSet { store(acceptPeerUpdates, "source.acceptPeerUpdates") } }
     /// Let a paired Studio hear this Mac's computer audio (for its live transcript).
     var shareAudio: Bool = true { didSet { store(shareAudio, "source.shareAudio") } }
 
@@ -209,6 +213,8 @@ final class SettingsStore {
     // MARK: Listening
     /// Transcribe the shared Mac's computer audio.
     var listen: Bool = false { didSet { store(listen, "listen.enabled") } }
+    /// Parakeet (most accurate, English, downloaded once) or Apple's built-in recognizer.
+    var speechEngine: SpeechEngine = .parakeet { didSet { store(speechEngine, "listen.engine") } }
     /// Language identifier for transcription; empty means this Mac's language.
     var transcriptLanguage: String = "" { didSet { store(transcriptLanguage, "listen.language") } }
     /// Send the new part of the transcript with each question.
@@ -216,6 +222,8 @@ final class SettingsStore {
     /// The most transcript sent with one question, in minutes.
     var transcriptWindowMinutes: Int = 10 { didSet { store(transcriptWindowMinutes, "listen.windowMinutes") } }
     var showCaptions: Bool = true { didSet { store(showCaptions, "listen.captions") } }
+    /// Names and jargon the AI should expect in the transcript, comma- or line-separated.
+    var transcriptTerms: String = "" { didSet { store(transcriptTerms, "listen.terms") } }
 
     // MARK: Automation
     var autoCaptureEnabled: Bool = false { didSet { store(autoCaptureEnabled, "auto.enabled") } }
@@ -268,6 +276,8 @@ final class SettingsStore {
         snapshotResolution = load("source.snapshotResolution", .high)
         snapshotQuality = load("source.snapshotQuality", 0.9)
         shareAudio = load("source.shareAudio", true)
+        acceptPeerUpdates = load("source.acceptPeerUpdates", true)
+        updateSharedMac = load("updates.sharedMac", true)
         provider = load("ai.provider", .claudeCode)
         claudeCodeModel = load("ai.claudeCodeModel", ModelCatalog.defaultModelID(for: .claudeCode) ?? "claude-opus-5-5")
         claudeCodePath = load("ai.claudeCodePath", "")
@@ -290,10 +300,12 @@ final class SettingsStore {
         showStage = load("studio.showStage", true)
         skills = PromptSkill.upgradingBuiltIns(load("studio.skills", PromptSkill.defaults))
         listen = load("listen.enabled", false)
+        speechEngine = load("listen.engine", .parakeet)
         transcriptLanguage = load("listen.language", "")
         includeTranscript = load("listen.include", true)
         transcriptWindowMinutes = load("listen.windowMinutes", 10)
         showCaptions = load("listen.captions", true)
+        transcriptTerms = load("listen.terms", "")
         autoCaptureEnabled = load("auto.enabled", false)
         autoCaptureInterval = load("auto.interval", 30)
         onlyWhenChanged = load("auto.onlyWhenChanged", true)

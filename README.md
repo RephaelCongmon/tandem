@@ -11,7 +11,7 @@ It's built for moments like: your work laptop can't run AI tools but your person
 - **Ask Claude or OpenAI.** Streaming answers with Markdown, code blocks, tables and an optional reasoning summary. By default Tandem asks Claude through **Claude Code on your Claude subscription**, with no API key. Claude Opus 5.5 is the default (Fable 5.1, Sonnet 5.5 and Haiku 4.5 are available). An Anthropic or OpenAI API key (GPT‑6 Astra/Sol/Luna), or any OpenAI-compatible server (LM Studio, Ollama, vLLM), also works.
 - **Your context, your way.** Type a question; attach a fresh screenshot automatically; annotate it first (boxes, arrows, pen, highlight, text), **crop** to what matters and **redact** anything private before it leaves the Mac.
 - **On demand, by shortcut, or on a schedule.** Global shortcuts on both Macs, a "send with note" panel on the Source, and auto-capture every N seconds — optionally only when the screen actually changed (detected on the Source, so unchanged screens aren't even sent), with an hourly cap.
-- **Hears the meeting, too.** Turn on **Listen** and the Source's computer audio streams to the Studio (Opus, about 30 kbps) and is transcribed on-device as it's spoken, about a second behind. **Follow-up** finds the question just asked out loud, or on screen, and answers it in a few plain sentences. The transcript also goes with every other question, so the AI knows what's being discussed.
+- **Hears the meeting, too.** Turn on **Listen** and the Source's computer audio streams to the Studio (Opus, about 30 kbps) and is transcribed on-device as it's spoken, about a second behind, by NVIDIA's **Parakeet** model on the Neural Engine (about a quarter fewer mistakes than Apple's recognizer on conversation). **Follow-up** finds the question just asked out loud, or on screen, and answers it in a few plain sentences. The transcript also goes with every other question, so the AI knows what's being discussed.
 - **Remembers the conversation.** With Claude Code, each thread keeps a live session, so a follow-up sends only what's new and starts answering sooner. Earlier questions, answers, screenshots and transcripts stay in context.
 - **Answers on both Macs.** Replies can be mirrored back to the Source's window and menu bar.
 - **Private by design.** Pairing is confirmed with a 6-digit code; every session is end-to-end encrypted and mutually authenticated. Screenshots go only to the AI provider you choose, on your own subscription or key, and stay in memory unless you opt to keep them.
@@ -58,9 +58,11 @@ When someone asks you something out loud, press **Follow-up** (⌘3 in Tandem, o
 - Each question carries what was said **since the thread's previous question**, up to 10 minutes (Settings › Listening › At most). Earlier transcripts stay with their messages, so later questions keep the whole conversation in mind. Each sent message shows a **Transcript · N words** chip you can expand.
 - Every question gets the transcript, not just Follow-up. Turn it off per skill in the skill's editor, or entirely in Settings › Listening.
 - **Speed:** a question asked in a thread that already has answers typically starts streaming about 1.5–2 s after you click, and the first question of a thread in about 2–2.5 s.
-- **Language:** Settings › Listening › Language (default: this Mac's). On macOS 26 Tandem uses Apple's SpeechAnalyzer; the first time a language is used, macOS may download its speech model, and the caption shows the progress. On macOS 14 and 15 it uses on-device speech recognition and asks for Speech Recognition permission once.
+- **Speech recognition:** English is transcribed by **Parakeet TDT 0.6B v2** (NVIDIA, through FluidAudio on the Neural Engine). It's downloaded once, to the asking Mac only (451 MB, from Tandem's own GitHub releases, or from Hugging Face if this Mac can't reach them), in the background right after Tandem starts, so it's ready before you need it. Settings › Listening shows it and can remove it. On real conversational audio (earnings calls) it made 14.4% word errors against Apple's 19.7%, and it runs about 90× faster than real time. Other languages, or **Apple — built in** in Settings › Listening, use Apple's recognizer (SpeechAnalyzer on macOS 26; on macOS 14–15 it asks for Speech Recognition permission once).
+- **Names and terms:** list people, companies and jargon in Settings › Listening › Vocabulary. They go along with the transcript, so the AI spells them right when speech-to-text mishears them.
+- **Language:** Settings › Listening › Language (default: this Mac's).
 - **Nothing to set up on the shared Mac.** Audio uses the same Screen & System Audio Recording permission as the picture. It runs only while the Studio listens, sharing is on and the Mac is unlocked. The shared Mac's window shows **Hearing this Mac's audio** under that Studio, and macOS shows its own recording indicator. To never send audio, turn off Settings › Sharing › *Let the other Mac hear this Mac's audio* on the shared Mac.
-- Both Macs need Tandem 1.3 or later. If the shared Mac is older, the caption says so; update it there with **Update Now**.
+- Both Macs need Tandem 1.3 or later. If the shared Mac is older, the caption says so; update it there with **Update Now** once. From 1.4 on, the asking Mac keeps it up to date for you (see [Updates](#updates)).
 
 ### Leaving the shared Mac alone
 
@@ -72,7 +74,9 @@ The only things that put a prompt on the shared Mac are pairing a new Mac (or pa
 
 When a new version is published, an **Update** button appears in the window's toolbar. It opens what's new in that version, with **Later** and **Update Now**. The menu bar popover and **Tandem › Check for Updates…** offer the same thing. **Update Now** downloads the release and checks that it's signed by the same developer. It then replaces the app (moving it into Applications if it was running from a disk image) and restarts Tandem, and the other Mac reconnects by itself. Tandem checks every six hours; turn that off in Settings › General › Updates.
 
-Releases live in the private GitHub repository, so each Mac needs read access to it. It's automatic when the [GitHub CLI](https://cli.github.com) is signed in on that Mac (`brew install gh && gh auth login`). Otherwise, paste a fine-grained access token with read-only **Contents** access to the repository in Settings › General › Updates.
+**The shared Mac updates itself from the asking Mac.** When the shared Mac connects with an older version, the asking Mac sends it its own copy of Tandem over the encrypted link. The shared Mac installs it only if it's the same app, a newer version, and signed by the same developer; then it restarts and reconnects, all in about 3 seconds. So **Update Now on the asking Mac updates both Macs**, and the shared Mac never needs GitHub access or an AirDropped disk image. (A shared Mac on 1.3 or earlier needs one last manual update to 1.4.) Turn it off with Settings › General › *Keep the shared Mac up to date* (asking Mac) or *Install updates sent by the other Mac* (shared Mac); over Bluetooth it's only done when you click **Update It Now**.
+
+Releases live in the private GitHub repository, so the asking Mac needs read access to it. It's automatic when the [GitHub CLI](https://cli.github.com) is signed in on that Mac (`brew install gh && gh auth login`). Otherwise, paste a fine-grained access token with read-only **Contents** access to the repository in Settings › General › Updates.
 
 ### Global shortcuts (defaults — change them in Settings › Shortcuts)
 
@@ -102,6 +106,7 @@ If discovery is blocked (guest or corporate Wi-Fi with client isolation), use **
 - **Claude Code** answers run the `claude` command on the Studio Mac with its tools, plugins, hooks, MCP servers and CLAUDE.md files turned off, and Tandem's instructions in place of Claude Code's own. Nothing is saved to Claude Code's session history. Tandem never sees your Claude sign-in; the CLI uses its own.
 - **Not sandboxed.** Tandem runs outside the App Sandbox so it can use your installed Claude Code and its sign-in. It is signed with the hardened runtime, and still asks macOS for camera, screen recording and local network access.
 - **Capture** only runs while a paired Studio is actually watching (and never while paused or locked). macOS shows its screen-recording indicator whenever capture is active.
+- **Updates between the Macs** travel only over the paired, encrypted session, only from a Studio this Mac approved, and are installed only when they're a newer version signed by the same developer team (checked with the code signature, like **Update Now**).
 - **Audio** is captured only while a paired Studio has **Listen** on, and never while sharing is paused or the shared Mac is locked. It travels over the same encrypted session and is transcribed on the Studio Mac; no audio is recorded, saved or sent to the AI. Only the transcript text goes along with your questions, and it's saved with the thread like the rest of the conversation.
 - **Screenshots** are sent only to the AI provider you configured, directly from the Studio Mac (through Claude Code when that's the provider). By default they are kept **in memory only**; turn on Settings › Privacy › *Keep screenshots after quitting* to keep them with history. Threads older than your retention setting are deleted automatically.
 - Tandem has no servers, accounts, analytics or telemetry.
@@ -146,9 +151,15 @@ swift scripts/debug-command.swift B transcript                   # log the live 
 swift scripts/debug-command.swift B lastAnswer                   # log the last question, its transcript and the answer
 ```
 
+The live Parakeet test (`ParakeetLiveTests`) runs when `TANDEM_PARAKEET_MODELS` points at a folder holding `parakeet-tdt-0.6b-v2`; `scripts/test_all.sh` finds the app's downloaded model by itself. Development builds only update each other with `-TandemPeerUpdates YES`.
+
 To exercise listening without Screen Recording permission, give the Source a sound file to play in a loop as its "computer audio": `TANDEM_TEST_AUDIO=~/clip.aiff scripts/dev-two-macs.sh --mock-ai` (make one with `say -o ~/clip.aiff "…"`). Each question logs how long every step took (`log show --info --predicate 'category == "Chat"' | grep TANDEM-TIMING`).
 
-None of the debug hooks are compiled into Release builds. See [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md) and [docs/PROTOCOL.md](docs/PROTOCOL.md) for the design.
+None of the debug hooks are compiled into Release builds.
+
+### Credits
+
+Speech recognition uses [Parakeet TDT 0.6B v2](https://huggingface.co/nvidia/parakeet-tdt-0.6b-v2) by NVIDIA (CC-BY-4.0), in the [Core ML conversion](https://huggingface.co/FluidInference/parakeet-tdt-0.6b-v2-coreml) by FluidInference (CC-BY-4.0), run with [FluidAudio](https://github.com/FluidInference/FluidAudio) (Apache-2.0). Tandem mirrors the model files unchanged in its `speech-models-1` release. See [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md) and [docs/PROTOCOL.md](docs/PROTOCOL.md) for the design.
 
 ## Update log
 

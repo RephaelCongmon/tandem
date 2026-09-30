@@ -7,8 +7,10 @@ scripts/test_all.sh
 ```
 
 It runs:
-- **385 core tests** (plus opt-in live checks). Wire codec, secure handshake (including man-in-the-middle, tamper and replay), real-TCP loopback sessions, H.264 encode→decode, image codec, context building, stores, AI clients against recorded streams, Markdown, Bluetooth stream transport, markup renderer and editor, hotkeys.
+- **398 core tests** (plus opt-in live checks). Wire codec, secure handshake (including man-in-the-middle, tamper and replay), real-TCP loopback sessions, H.264 encode→decode, image codec, context building, stores, AI clients against recorded streams, Markdown, Bluetooth stream transport, markup renderer and editor, hotkeys.
   - Listening: audio messages on the wire, Opus and PCM round trips, packetizing, gain and levels, the audio timeline, transcript excerpts and their context text, skills that carry transcripts, and a **live on-device transcription** of a sentence spoken by `say`, streamed in 100 ms chunks (macOS 26; the SFSpeechRecognizer variant runs only where that permission was granted).
+  - Parakeet: the utterance segmenter (captions while speaking, finishing at pauses, cutting long speech in its quietest moment, ignoring clicks and hum), and a live Parakeet transcription of two spoken questions (`TANDEM_PARAKEET_MODELS`; `scripts/test_all.sh` sets it when the app's model is downloaded). The Hugging Face fallback download is opt-in with `TANDEM_PARAKEET_DOWNLOAD_TEST=1`.
+  - Updates between the Macs: the new messages on the wire, and the package assembler (intact, damaged, oversized and foreign packages).
   - The Claude Code client is tested against recorded CLI output and a fake `claude` script: streaming, stdin contents, errors, a CLI that quits without reading, cancellation, idle timeout, and live sessions (a follow-up reuses the process and sends only the new message; a changed history starts over; the spare process; a failed answer isn't kept).
   - `TANDEM_LIVE_CLAUDE=1 swift test --filter AIClaudeCodeLiveTests` (in `Core/`) checks the real installed CLI's version and sign-in.
 - **14 app tests.** Chat streaming, failure/retry, stop, snapshots, busy handling, settings persistence, hotkey overrides, converting ScreenCaptureKit audio buffers, and transcripts attached to questions (Follow-up carries the spoken question, then only newer speech; nothing when Listen or the setting is off).
@@ -33,6 +35,8 @@ Verified this way:
 - auto-capture every 5 s with "No change" detection and a 4-image context window;
 - the markup editor, onboarding steps, and every Settings pane (rendered in-app with `snap`);
 - **listening**, with `TANDEM_TEST_AUDIO` playing a two-question meeting clip on the Source. Captions follow the speech. **Follow-up** pressed about a second after each question got the complete question, and only the new speech the second time. Claude restated it with speech-to-text mistakes fixed ("cash invalidation" → cache invalidation) and answered, with first words 2.3 s after the click for a new thread and 1.7 s in a thread with a live Claude Code session;
+- **Parakeet** in the app: the model downloaded from the `speech-models-1` mirror (checksum-checked) 46 s after the Studio started, then loaded in 0.3 s. On the two-question clip it heard "write path" and "cache invalidation" where Apple's recognizer heard "right path" and "cash invalidation". Follow-up got both questions complete, with first words 2.2–2.4 s after the click. A 40-clip Earnings-22 bake-off on this Mac gave 14.4% word errors for Parakeet (Core ML) against 19.7% for Apple, at 93× real time;
+- **updates between the Macs**, with a 0.0.0 Source and a 9.0.0 Studio (both signed with the team's Apple Development certificate). The Studio sent its 19 MB app on connect. The Source checked and installed it in 0.2 s, relaunched with its arguments, and reconnected on 9.0.0 3 s after the offer;
 - the app's real `AudioCaptureService`, compiled into a harness running with the terminal's Screen Recording permission, capturing system audio while `afplay` played the clip. The audio went through Opus and the wire codec, and the full transcript came out (about 21 kbps).
 
 ## Two-Mac hardware checklist
@@ -76,4 +80,5 @@ These need two real Macs (and permissions only a person can grant):
    - Try an OpenAI-compatible local server (LM Studio at `http://localhost:1234/v1`).
 10. **Sleep/wake.** Sleep the Studio, wake it: it reconnects on its own.
 11. **Background Source.** Turn on **Open at login** on the Source, log out and in: no window appears, the menu bar icon does, and the Studio connects. Clicking the Dock icon or **Open Tandem** shows the window.
-12. **Updates.** With an older version installed, **Tandem › Check for Updates…** shows the toolbar's **Update** button and its panel. **Update Now** replaces the app and relaunches the new version; from a disk image, it installs into Applications. Without GitHub access, Settings › General › Updates explains how to add it.
+12. **Updates.** On the asking Mac, **Update Now**; within seconds of it restarting, the shared Mac shows the new version too (Settings › General › Updates › *Shared Mac*), with nothing done on it.
+13. **Updates from GitHub.** With an older version installed, **Tandem › Check for Updates…** shows the toolbar's **Update** button and its panel. **Update Now** replaces the app and relaunches the new version; from a disk image, it installs into Applications. Without GitHub access, Settings › General › Updates explains how to add it.

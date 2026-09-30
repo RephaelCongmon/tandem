@@ -47,14 +47,38 @@ public protocol LiveSpeechTranscriber: AnyObject, Sendable {
     var engineName: String { get }
 }
 
+/// Which recognizer transcribes the shared Mac's audio.
+public enum SpeechEngine: String, Codable, CaseIterable, Sendable, Identifiable {
+    /// NVIDIA Parakeet TDT 0.6B v2 (English), downloaded once (about 450 MB).
+    case parakeet
+    /// Apple's built-in recognizer (SpeechAnalyzer on macOS 26, SFSpeechRecognizer before).
+    case apple
+
+    public var id: String { rawValue }
+}
+
 public enum LiveSpeech {
-    /// The best transcriber for this Mac: SpeechAnalyzer on macOS 26 and later (long-form,
-    /// fast, fully on-device), otherwise SFSpeechRecognizer.
-    public static func makeTranscriber(locale: Locale, preferLegacy: Bool = false) -> LiveSpeechTranscriber {
+    /// A transcriber for `locale`: Parakeet when chosen and the language is English, otherwise
+    /// Apple's SpeechAnalyzer on macOS 26 and later (long-form, fully on-device), otherwise
+    /// SFSpeechRecognizer.
+    public static func makeTranscriber(
+        locale: Locale,
+        engine: SpeechEngine = .apple,
+        parakeet: ParakeetModelStore? = nil,
+        preferLegacy: Bool = false
+    ) -> LiveSpeechTranscriber {
+        if engine == .parakeet, let parakeet, parakeetSupports(locale) {
+            return ParakeetTranscriber(store: parakeet)
+        }
         if #available(macOS 26.0, *), !preferLegacy, SpeechTranscriber.isAvailable {
             return AnalyzerTranscriber(locale: locale)
         }
         return RecognizerTranscriber(locale: locale)
+    }
+
+    /// Parakeet v2 is English-only.
+    public static func parakeetSupports(_ locale: Locale) -> Bool {
+        locale.language.languageCode?.identifier == "en"
     }
 
     /// Languages live transcription can use on this Mac, by identifier.

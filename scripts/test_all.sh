@@ -2,6 +2,12 @@
 # Runs the core test suite and builds the app (Debug) with warnings treated as failures.
 set -euo pipefail
 ROOT="$(cd "$(dirname "$0")/.." && pwd)"
+# The live Parakeet test runs when a downloaded model is around (the app's, or a dev profile's).
+if [[ -z "${TANDEM_PARAKEET_MODELS:-}" ]]; then
+  for dir in "$HOME/Library/Application Support/Tandem/Models" "$HOME/Library/Application Support/Tandem/Profiles/B/Models"; do
+    [[ -d "$dir/parakeet-tdt-0.6b-v2" ]] && { export TANDEM_PARAKEET_MODELS="$dir"; break; }
+  done
+fi
 echo "▸ Core tests"
 (cd "$ROOT/Core" && swift test 2>&1 | tee /tmp/tandem-core-tests.log | grep -E "Executed [0-9]+ tests|error:|failed \(" | tail -3)
 grep -q "with 0 failures" /tmp/tandem-core-tests.log || { echo "Core tests failed"; exit 1; }

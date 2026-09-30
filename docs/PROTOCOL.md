@@ -59,6 +59,7 @@ After the handshake, every frame payload is `ciphertext ‖ tag` (ChaCha20-Poly1
 | 2 | videoFormat | codec u8, width u16, height u16, count u8, then `count × (len u16, parameter set)` |
 | 3 | videoFrame | flags u8 (bit 0 keyframe), sequence u32, pts µs u64, capturedAt ns u64, AVCC access unit |
 | 4 | snapshotChunk | snapshot UUID (16 B), index u32, count u32, bytes |
+| 6 | updateChunk | offer UUID (16 B), index u32, count u32, bytes |
 | 5 | audioPacket | codec u8 (1 Opus, 2 PCM16 LE), sequence u32, sample rate u32, sample count u32, capturedAt ns u64 (Source clock, first sample), count u8, then `count × (len u16, frame)` |
 
 Audio is mono 16 kHz. Opus frames are 20 ms (32 kbps), and a packet carries five of them (100 ms). PCM16 is the fallback when a Mac can't encode Opus.
@@ -76,10 +77,11 @@ Audio is mono 16 kHz. Opus frames are 20 ms (32 kbps), and a packet carries five
 - `replyMirror`
 - `audioRequest {enabled, codecs}` (Studio → Source): start or stop sending computer audio; `codecs` lists what the Studio can decode, best first
 - `audioStatus {state, message, codec, sampleRate}` (Source → Studio): `off`, `starting`, `live`, `paused`, `needsPermission`, `notAllowed` or `error`
+- `updateOffer {id, version, build, byteCount, sha256}` (Studio → Source): a newer Tandem, as a zip of the signed app; `updateReply {id, accepted, reason}`; then `updateChunk`s; `updateStatus {id, phase, fraction, message}` (Source → Studio): `receiving`, `verifying`, `installing`, `restarting` or `failed`
 - `ping`/`pong` (NTP-style clock offset)
 - `goodbye`
 
-Unknown messages are ignored, so newer peers can add them. `hello.capabilities` advertises optional features: `"audio"` means the peer can send (Source) or transcribe (Studio) computer audio. A Studio uses it to tell the user that an older Source needs an update.
+Unknown messages are ignored, so newer peers can add them. `hello.capabilities` advertises optional features: `"audio"` means the peer can send (Source) or transcribe (Studio) computer audio; `"update"` means a Source installs updates its Studio sends (after checking the version and the developer signature). A Studio uses it to tell the user that an older Source needs an update.
 
 ### Scheduling
 

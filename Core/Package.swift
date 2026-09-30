@@ -8,10 +8,16 @@ let package = Package(
         .library(name: "TandemCore", targets: ["TandemCore"]),
         .library(name: "TandemUI", targets: ["TandemUI"])
     ],
+    dependencies: [
+        // On-device Parakeet speech recognition (Core ML). Pinned to a commit: the 0.9.1 tag
+        // doesn't build with Swift 6.3.
+        .package(url: "https://github.com/FluidInference/FluidAudio.git", revision: "8145085136df11758cc1303ab54d8e032c12bd41")
+    ],
     targets: [
         // Networking, security, media, speech, AI clients, markdown parsing. No SwiftUI.
         .target(
             name: "TandemCore",
+            dependencies: [.product(name: "FluidAudio", package: "FluidAudio")],
             linkerSettings: [
                 .linkedFramework("Network"),
                 .linkedFramework("CoreBluetooth"),

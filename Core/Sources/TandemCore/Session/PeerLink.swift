@@ -205,6 +205,21 @@ public final class PeerLink {
         pump()
     }
 
+    /// Sends an update package in chunks at bulk priority (behind control and audio, ahead of
+    /// video), after the offer was accepted.
+    public func sendUpdatePackage(offerID: UUID, data: Data) {
+        dispatchPrecondition(condition: .onQueue(queue))
+        guard !isClosed, !data.isEmpty else { return }
+        let chunkSize = Self.snapshotChunkSize(for: linkKind)
+        let count = Self.chunkCount(byteCount: data.count, link: linkKind)
+        for index in 0..<count {
+            let start = index * chunkSize
+            let end = min(start + chunkSize, data.count)
+            enqueue(.updateChunk(UpdateChunk(offerID: offerID, index: index, count: count, data: data.subdata(in: start..<end))), priority: .bulk)
+        }
+        pump()
+    }
+
     public static func snapshotChunkSize(for link: LinkKind) -> Int {
         link.isConstrained ? 16 * 1024 : 128 * 1024
     }

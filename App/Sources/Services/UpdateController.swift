@@ -142,6 +142,15 @@ final class UpdateController {
         return nil
     }
 
+    /// Downloads a file attached to one of the repository's releases (the speech model), with
+    /// the same GitHub access updates use.
+    func downloadReleaseFile(named name: String, tag: String, to directory: URL, progress: @escaping @Sendable (Double) -> Void) async throws -> URL {
+        guard let feed = await makeFeed() else {
+            throw UpdateError.accessDenied("No GitHub access on this Mac.")
+        }
+        return try await feed.downloadAsset(named: name, fromReleaseTagged: tag, to: directory, progress: progress)
+    }
+
     // MARK: Installing
 
     /// Downloads, verifies and installs `latest`, then relaunches into it.
@@ -173,7 +182,7 @@ final class UpdateController {
             try? FileManager.default.removeItem(at: folder)
             log.notice("Installed Tandem \(release.version.description, privacy: .public) at \(target.path, privacy: .public); relaunching")
             installPhase = "Restarting…"
-            try relaunch(into: target)
+            try AppRelauncher.relaunch(into: target)
         } catch {
             try? FileManager.default.removeItem(at: folder)
             fail(error)
@@ -186,24 +195,5 @@ final class UpdateController {
         log.error("Update failed: \(self.installError ?? "", privacy: .public)")
     }
 
-    /// Quits, and reopens `app` once this process has exited.
-    private func relaunch(into app: URL) throws {
-        let pid = ProcessInfo.processInfo.processIdentifier
-        let arguments = CommandLine.arguments.dropFirst().map(Self.shellQuoted).joined(separator: " ")
-        var script = "while /bin/kill -0 \(pid) 2>/dev/null; do /bin/sleep 0.2; done; /usr/bin/open -n \(Self.shellQuoted(app.path))"
-        if !arguments.isEmpty { script += " --args \(arguments)" }
-        let process = Process()
-        process.executableURL = URL(fileURLWithPath: "/bin/sh")
-        process.arguments = ["-c", script]
-        do {
-            try process.run()
-        } catch {
-            throw UpdateError.installFailed("The update is installed, but Tandem couldn't restart itself. Quit and reopen it.")
-        }
-        NSApp.terminate(nil)
-    }
-
-    static func shellQuoted(_ text: String) -> String {
-        "'" + text.replacingOccurrences(of: "'", with: "'\\''") + "'"
-    }
+    static func shellQuoted(_ text: String) -> String { AppRelauncher.shellQuoted(text) }
 }

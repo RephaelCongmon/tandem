@@ -123,7 +123,9 @@ struct ListeningStatus {
             isWorking = true
             return
         case .downloading(let fraction):
-            message = "Downloading the speech model for this language… \(Int(fraction * 100))%"
+            message = transcription.usesParakeet
+                ? "Downloading the speech model (one time, \(ByteCountFormatter.string(fromByteCount: Int64(ParakeetModelStore.Mirror.size), countStyle: .file)))… \(Int(fraction * 100))%"
+                : "Downloading the speech model for this language… \(Int(fraction * 100))%"
             isWorking = true
             return
         case .failed(let error):

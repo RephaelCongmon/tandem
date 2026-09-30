@@ -70,6 +70,9 @@ public protocol UpdateFeed: Sendable {
     func latestRelease() async throws -> ReleaseInfo
     /// Downloads `asset` into `directory` and returns the file.
     func download(_ asset: ReleaseAsset, of release: ReleaseInfo, to directory: URL) async throws -> URL
+    /// Downloads the file `name` attached to the release tagged `tag`, which needn't be an app
+    /// version (the speech model lives in its own release). `progress` reports 0…1.
+    func downloadAsset(named name: String, fromReleaseTagged tag: String, to directory: URL, progress: (@Sendable (Double) -> Void)?) async throws -> URL
 }
 
 // MARK: - Decoding
@@ -114,6 +117,24 @@ enum ReleaseDecoding {
         let release = try decoder.decode(RESTRelease.self, from: data)
         return try make(tag: release.tag_name, title: release.name, notes: release.body, publishedAt: release.published_at,
                         assets: release.assets.map { ReleaseAsset(name: $0.name, apiURL: $0.url, size: $0.size ?? 0) })
+    }
+
+    /// Just the assets of a REST API release, whatever its tag.
+    static func restAssets(_ data: Data) throws -> [ReleaseAsset] {
+        try decoder.decode(RESTRelease.self, from: data).assets.map { ReleaseAsset(name: $0.name, apiURL: $0.url, size: $0.size ?? 0) }
+    }
+
+    /// Just the assets of a `gh release view --json assets` release.
+    static func cliAssets(_ data: Data) throws -> [ReleaseAsset] {
+        struct Assets: Decodable {
+            struct Asset: Decodable {
+                var name: String
+                var apiUrl: URL?
+                var size: Int?
+            }
+            var assets: [Asset]
+        }
+        return try decoder.decode(Assets.self, from: data).assets.map { ReleaseAsset(name: $0.name, apiURL: $0.apiUrl, size: $0.size ?? 0) }
     }
 
     /// A release from `gh release view --json tagName,name,body,publishedAt,assets`.
@@ -168,18 +189,44 @@ public struct GitHubAPIFeed: UpdateFeed {
     }
 
     public func download(_ asset: ReleaseAsset, of release: ReleaseInfo, to directory: URL) async throws -> URL {
+        try await downloadFile(asset, to: directory, progress: nil)
+    }
+
+    public func downloadAsset(named name: String, fromReleaseTagged tag: String, to directory: URL, progress: (@Sendable (Double) -> Void)?) async throws -> URL {
+        let escaped = tag.addingPercentEncoding(withAllowedCharacters: .urlPathAllowed) ?? tag
+        guard let url = URL(string: "https://api.github.com/repos/\(repository)/releases/tags/\(escaped)") else {
+            throw UpdateError.noRelease("“\(repository)” isn't a GitHub repository name.")
+        }
+        let (data, response) = try await load(request(url, accept: "application/vnd.github+json"))
+        try Self.check(response, repository: repository)
+        guard let asset = try ReleaseDecoding.restAssets(data).first(where: { $0.name == name }) else {
+            throw UpdateError.noRelease("The release “\(tag)” has no file named \(name).")
+        }
+        return try await downloadFile(asset, to: directory, progress: progress)
+    }
+
+    private func downloadFile(_ asset: ReleaseAsset, to directory: URL, progress: (@Sendable (Double) -> Void)?) async throws -> URL {
         guard let url = asset.apiURL else { throw UpdateError.missingArchive }
-        let temporary: URL
+        let destination = directory.appendingPathComponent(asset.name)
+        let handler = DownloadHandler(destination: destination, expectedBytes: asset.size, progress: progress)
+        let session = URLSession(configuration: .default, delegate: handler, delegateQueue: nil)
+        defer { session.finishTasksAndInvalidate() }
         let response: URLResponse
         do {
-            (temporary, response) = try await session.download(for: request(url, accept: "application/octet-stream"), delegate: RedirectGuard())
+            response = try await withTaskCancellationHandler {
+                try await withCheckedThrowingContinuation { continuation in
+                    handler.continuation = continuation
+                    session.downloadTask(with: request(url, accept: "application/octet-stream")).resume()
+                }
+            } onCancel: {
+                session.invalidateAndCancel()
+            }
+        } catch let error as UpdateError {
+            throw error
         } catch {
-            throw UpdateError.network("Couldn't download the update: \(error.localizedDescription)")
+            throw UpdateError.network("Couldn't download \(asset.name): \(error.localizedDescription)")
         }
         try Self.check(response, repository: repository)
-        let destination = directory.appendingPathComponent(asset.name)
-        try? FileManager.default.removeItem(at: destination)
-        try FileManager.default.moveItem(at: temporary, to: destination)
         return destination
     }
 
@@ -211,11 +258,58 @@ public struct GitHubAPIFeed: UpdateFeed {
         return request
     }
 
-    private final class RedirectGuard: NSObject, URLSessionTaskDelegate {
+    /// Runs one download: strips the token on the redirect to storage, reports progress, and
+    /// moves the file into place before the temporary one disappears.
+    private final class DownloadHandler: NSObject, URLSessionDownloadDelegate, @unchecked Sendable {
+        let destination: URL
+        let expectedBytes: Int
+        let progress: (@Sendable (Double) -> Void)?
+        var continuation: CheckedContinuation<URLResponse, Error>?
+        private var moveError: Error?
+        private var lastReport = 0.0
+
+        init(destination: URL, expectedBytes: Int, progress: (@Sendable (Double) -> Void)?) {
+            self.destination = destination
+            self.expectedBytes = expectedBytes
+            self.progress = progress
+        }
+
         func urlSession(_ session: URLSession, task: URLSessionTask, willPerformHTTPRedirection response: HTTPURLResponse,
                         newRequest request: URLRequest, completionHandler: @escaping (URLRequest?) -> Void) {
             guard let original = task.originalRequest else { return completionHandler(request) }
             completionHandler(GitHubAPIFeed.redirected(request, from: original))
+        }
+
+        func urlSession(_ session: URLSession, downloadTask: URLSessionDownloadTask, didWriteData bytesWritten: Int64,
+                        totalBytesWritten: Int64, totalBytesExpectedToWrite: Int64) {
+            let total = totalBytesExpectedToWrite > 0 ? Double(totalBytesExpectedToWrite) : Double(expectedBytes)
+            guard let progress, total > 0 else { return }
+            let fraction = min(1, Double(totalBytesWritten) / total)
+            if fraction - lastReport >= 0.01 || fraction >= 1 {
+                lastReport = fraction
+                progress(fraction)
+            }
+        }
+
+        func urlSession(_ session: URLSession, downloadTask: URLSessionDownloadTask, didFinishDownloadingTo location: URL) {
+            do {
+                try? FileManager.default.removeItem(at: destination)
+                try FileManager.default.moveItem(at: location, to: destination)
+            } catch {
+                moveError = error
+            }
+        }
+
+        func urlSession(_ session: URLSession, task: URLSessionTask, didCompleteWithError error: Error?) {
+            let continuation = self.continuation
+            self.continuation = nil
+            if let error = error ?? moveError {
+                continuation?.resume(throwing: error)
+            } else if let response = task.response {
+                continuation?.resume(returning: response)
+            } else {
+                continuation?.resume(throwing: UpdateError.network("GitHub didn't answer."))
+            }
         }
     }
 }
@@ -284,6 +378,37 @@ public struct GitHubCLIFeed: UpdateFeed {
             let detail = Self.lastLine(result.errors)
             throw UpdateError.network(detail.isEmpty ? "Couldn't download the update." : "Couldn't download the update: \(detail)")
         }
+        return file
+    }
+
+    public func downloadAsset(named name: String, fromReleaseTagged tag: String, to directory: URL, progress: (@Sendable (Double) -> Void)?) async throws -> URL {
+        // The size, so progress can be reported while `gh` writes the file.
+        var expected = 0
+        if let listing = await ChildProcess.run(executable, arguments: ["release", "view", tag, "--repo", repository, "--json", "assets"], environment: Self.environment, timeout: 30),
+           listing.status == 0 {
+            expected = (try? ReleaseDecoding.cliAssets(Data(listing.output.utf8)).first { $0.name == name }?.size) ?? 0
+        }
+        let file = directory.appendingPathComponent(name)
+        let watcher = Task {
+            guard let progress, expected > 0 else { return }
+            while !Task.isCancelled {
+                try? await Task.sleep(nanoseconds: 500_000_000)
+                let written = (try? FileManager.default.attributesOfItem(atPath: file.path)[.size] as? Int) ?? 0
+                progress(min(0.99, Double(written) / Double(expected)))
+            }
+        }
+        defer { watcher.cancel() }
+        guard let result = await ChildProcess.run(
+            executable,
+            arguments: ["release", "download", tag, "--repo", repository, "--pattern", name, "--dir", directory.path, "--clobber"],
+            environment: Self.environment,
+            timeout: 1800
+        ) else { throw UpdateError.network("The download didn't finish.") }
+        guard result.status == 0, FileManager.default.fileExists(atPath: file.path) else {
+            let detail = Self.lastLine(result.errors)
+            throw UpdateError.network(detail.isEmpty ? "Couldn't download \(name)." : "Couldn't download \(name): \(detail)")
+        }
+        progress?(1)
         return file
     }
 

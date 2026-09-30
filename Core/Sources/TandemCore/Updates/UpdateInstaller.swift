@@ -14,8 +14,9 @@ public enum UpdateInstaller {
         let folder = archive.deletingLastPathComponent().appendingPathComponent("unpacked", isDirectory: true)
         try? fileManager.removeItem(at: folder)
         try fileManager.createDirectory(at: folder, withIntermediateDirectories: true)
-        guard let result = await ChildProcess.run(URL(fileURLWithPath: "/usr/bin/ditto"), arguments: ["-x", "-k", archive.path, folder.path], timeout: 300),
-              result.status == 0 else {
+        do {
+            try await FileTools.unzip(archive, to: folder, timeout: 300)
+        } catch {
             throw UpdateError.invalidPackage("The download couldn't be unpacked.")
         }
         let contents = (try? fileManager.contentsOfDirectory(at: folder, includingPropertiesForKeys: nil)) ?? []

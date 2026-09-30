@@ -81,6 +81,7 @@ final class SourceEngine {
     @ObservationIgnored private let capture = CaptureService()
     @ObservationIgnored private let fanout = VideoFanout()
     @ObservationIgnored private let audioCapture = AudioCaptureService()
+    @ObservationIgnored private lazy var updateReceiver = PeerUpdateReceiver(settings: settings)
     @ObservationIgnored private lazy var audioFanout = AudioFanout(queue: audioCapture.queue)
     @ObservationIgnored private var audioChain: Task<Void, Never>?
     @ObservationIgnored private var audioGeneration = 0
@@ -212,6 +213,7 @@ final class SourceEngine {
 
     func detach(_ connection: PeerConnection) {
         guard viewers.contains(where: { $0.id == connection.id }) else { return }
+        updateReceiver.connectionClosed(connection)
         connection.ackSink.value = nil
         connection.onControl = nil
         fanout.removeViewer(id: connection.id)
@@ -262,6 +264,12 @@ final class SourceEngine {
         case .audioRequest(let request):
             viewers[index].audioRequest = request
             reconcileAudio()
+        case .updateOffer(let offer):
+            guard viewers[index].approved else {
+                connection.send(.control(.updateReply(UpdateReply(id: offer.id, accepted: false, reason: "Waiting for approval on the shared Mac."))))
+                return
+            }
+            updateReceiver.handle(offer, from: connection)
         case .replyMirror(let reply):
             if settings.showRepliesOnSource, viewers[index].approved { lastReply = reply }
         default:

@@ -28,13 +28,26 @@ public struct TranscriptExcerpt: Codable, Sendable, Hashable {
     /// The newest speech this excerpt covers (including pending words); the next excerpt in the
     /// thread starts after it.
     public var coveredThrough: Date?
+    /// Names and terms the user listed (Settings › Listening), to spell misheard words right.
+    public var terms: [String]?
 
-    public init(segments: [TranscriptSegment], pendingText: String? = nil, sourceName: String? = nil, omitsEarlierSpeech: Bool = false, coveredThrough: Date? = nil) {
+    public init(segments: [TranscriptSegment], pendingText: String? = nil, sourceName: String? = nil, omitsEarlierSpeech: Bool = false, coveredThrough: Date? = nil, terms: [String]? = nil) {
         self.segments = segments
         self.pendingText = pendingText?.trimmingCharacters(in: .whitespacesAndNewlines).nonEmpty
         self.sourceName = sourceName
         self.omitsEarlierSpeech = omitsEarlierSpeech
         self.coveredThrough = coveredThrough ?? segments.last?.end
+        self.terms = terms.flatMap { $0.isEmpty ? nil : $0 }
+    }
+
+    /// Splits a comma- or line-separated list of names and terms.
+    public static func terms(from text: String) -> [String] {
+        var seen = Set<String>()
+        return text.split(whereSeparator: { $0 == "," || $0 == ";" || $0.isNewline })
+            .map { $0.trimmingCharacters(in: .whitespaces) }
+            .filter { !$0.isEmpty && seen.insert($0.lowercased()).inserted }
+            .prefix(200)
+            .map { $0 }
     }
 
     public var isEmpty: Bool { segments.isEmpty && pendingText == nil }
@@ -65,6 +78,9 @@ public struct TranscriptExcerpt: Codable, Sendable, Hashable {
         }
         if let pendingText {
             lines.append("[just now, still being transcribed] \(pendingText)")
+        }
+        if let terms, !terms.isEmpty {
+            lines.append("Names and terms that may come up; words that sound like them probably are them: \(terms.joined(separator: ", ")).")
         }
         return lines.joined(separator: "\n")
     }
@@ -148,7 +164,8 @@ public struct LiveTranscript: Sendable, Equatable {
         window: TimeInterval,
         maxCharacters: Int = 16_000,
         includeVolatile: Bool = true,
-        sourceName: String? = nil
+        sourceName: String? = nil,
+        terms: [String] = []
     ) -> TranscriptExcerpt? {
         let windowStart = now.addingTimeInterval(-window)
         let fresh = segments.filter { segment in
@@ -164,7 +181,7 @@ public struct LiveTranscript: Sendable, Equatable {
             omitted = true
         }
         let covered = [kept.last?.end, pending == nil ? nil : volatile?.end].compactMap { $0 }.max()
-        let excerpt = TranscriptExcerpt(segments: kept, pendingText: pending, sourceName: sourceName, omitsEarlierSpeech: omitted, coveredThrough: covered)
+        let excerpt = TranscriptExcerpt(segments: kept, pendingText: pending, sourceName: sourceName, omitsEarlierSpeech: omitted, coveredThrough: covered, terms: terms)
         return excerpt.isEmpty ? nil : excerpt
     }
 

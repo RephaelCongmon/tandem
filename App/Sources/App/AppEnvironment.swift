@@ -59,6 +59,16 @@ enum AppEnvironment {
         #endif
     }
 
+    /// Whether this Mac updates the shared Mac (and accepts updates from its Studio). Off for
+    /// development builds unless asked for with `-TandemPeerUpdates YES`.
+    static var peerUpdatesEnabled: Bool {
+        #if DEBUG
+        return UserDefaults.standard.bool(forKey: "TandemPeerUpdates")
+        #else
+        return true
+        #endif
+    }
+
     /// Development builds are numbered 0.0.0 (see App/project.yml).
     static var isDevelopmentBuild: Bool {
         #if DEBUG

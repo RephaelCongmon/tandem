@@ -71,11 +71,24 @@ final class PeerConnection: Identifiable {
     @ObservationIgnored nonisolated let ackSink = Locked<((VideoAck) -> Void)?>(nil)
     /// Called on the link queue with the Source's audio packets.
     @ObservationIgnored nonisolated let audioSink = Locked<((AudioPacket) -> Void)?>(nil)
+    /// Called on the link queue with pieces of an update package (Source side).
+    @ObservationIgnored nonisolated let updateSink = Locked<((UpdateChunk) -> Void)?>(nil)
 
     var isConnected: Bool { phase == .connected }
 
     /// The other Mac runs a version that can send (or receive) computer audio.
     var peerSupportsAudio: Bool { remoteHello?.capabilities.contains(PeerHello.Capability.audio) ?? false }
+
+    /// The other Mac installs updates this Mac sends it.
+    var peerAcceptsUpdates: Bool { remoteHello?.capabilities.contains(PeerHello.Capability.peerUpdate) ?? false }
+
+    /// The other Mac's Tandem version, once it said hello.
+    var peerVersion: AppVersion? { remoteHello.flatMap { AppVersion($0.appVersion) } }
+
+    func sendUpdatePackage(offerID: UUID, data: Data) {
+        let link = self.link
+        link.queue.async { link.sendUpdatePackage(offerID: offerID, data: data) }
+    }
 
     init(link: PeerLink, direction: Direction, isPairingAttempt: Bool, expectedPeer: DeviceIdentity?) {
         id = link.id
@@ -162,6 +175,9 @@ final class LinkRouter: @unchecked Sendable {
 
         case .audioPacket(let packet):
             connection.audioSink.value?(packet)
+
+        case .updateChunk(let chunk):
+            connection.updateSink.value?(chunk)
 
         case .snapshotChunk(let chunk):
             guard let event = assembler.receive(chunk) else { return }
