@@ -155,6 +155,16 @@ None of the debug hooks are compiled into Release builds. See [docs/ARCHITECTURE
 Newest first. Each version is also published, with its download, on the repository's [Releases](https://github.com/RephaelCongmon/tandem/releases) page, and **Update Now** in the app installs it.
 
 <!-- update-log:start -->
+### 1.3.0 — September 29, 2026
+
+- **Listen:** the shared Mac's computer audio (a meeting or call) is transcribed live on this Mac, on-device, about a second behind. Live captions sit above the skill buttons, and the full transcript is a click away.
+- **Follow-up** now finds the question someone just asked out loud (or on screen), shows it as understood, and answers it. Every question carries what was said since the previous one, so the AI keeps the whole conversation in mind.
+- **Faster answers with Claude Code:** each thread keeps a live session, and a spare is started ahead of time. First words now arrive about 1.5–2.5 s after you ask.
+- **New shortcuts:** ⌃⌥F answers the follow-up and ⌃⌥L turns Listen on or off, from any app. ⌥⌘L works in the Capture menu.
+- **New settings:** Settings › Listening (language, how much transcript to send, captions). On the shared Mac, Settings › Sharing › Audio.
+- **Fixed:** on Bluetooth links, data sent just before the other Mac closed the connection could be lost.
+- Listen needs this version on **both** Macs, so update the shared Mac too.
+
 ### 1.2.0 — September 29, 2026
 
 - **Skills:** one-click buttons above the message field. **Debug**, **New Problem** and **Follow-up** each send a fresh screenshot with detailed instructions for that kind of question, and anything you've typed goes along as extra context.
