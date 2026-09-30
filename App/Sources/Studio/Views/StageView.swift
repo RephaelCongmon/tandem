@@ -17,16 +17,19 @@ struct StageView: View {
                 .opacity(model.studio.liveState == .live ? 1 : 0)
                 .animation(.easeOut(duration: 0.25), value: model.studio.liveState == .live)
             overlayContent
+            if let selection = model.studio.regionSelection {
+                RegionSelectionOverlay(selection: selection)
+            }
         }
         .overlay(alignment: .topLeading) {
-            if model.studio.isConnected {
+            if showsChrome {
                 StageHUD()
                     .padding(Spacing.m)
                     .opacity(chromeVisible || model.studio.liveState != .live ? 1 : 0)
             }
         }
         .overlay(alignment: .topTrailing) {
-            if model.studio.isConnected {
+            if showsChrome {
                 HStack(spacing: 6) {
                     RemoteSourceMenu()
                     IconButton(focus ? "arrow.down.right.and.arrow.up.left" : "arrow.up.left.and.arrow.down.right",
@@ -40,7 +43,7 @@ struct StageView: View {
             }
         }
         .overlay(alignment: .bottom) {
-            if model.studio.isConnected {
+            if showsChrome {
                 StageToolbar()
                     .padding(.bottom, Spacing.l)
                     .opacity(chromeVisible || model.studio.liveState != .live ? 1 : 0)
@@ -63,11 +66,17 @@ struct StageView: View {
             }
         }
         .onTapGesture(count: 2) {
+            guard model.studio.regionSelection == nil else { return }
             withAnimation(.spring(response: 0.35)) { focus.toggle() }
         }
         .clipped()
         .onAppear { model.studio.stageAppeared() }
         .onDisappear { model.studio.stageDisappeared() }
+    }
+
+    /// HUD and toolbars; hidden while selecting so the whole frame can be dragged over.
+    private var showsChrome: Bool {
+        model.studio.isConnected && model.studio.regionSelection == nil
     }
 
     private func scheduleHide() {
@@ -176,16 +185,16 @@ private struct StageToolbar: View {
         let settings = model.settings
         HStack(spacing: 4) {
             Button {
-                studio.captureAndAsk()
+                studio.askAboutSelection()
             } label: {
                 Label("Ask", systemImage: "sparkles")
                     .font(.system(size: 12.5, weight: .semibold))
             }
             .buttonStyle(TandemButtonStyle(.primary, size: .regular))
-            .disabled(!studio.canCapture || model.chat.isBusy)
-            .help("Capture the screen and ask (⇧⌘↩)")
+            .disabled(!studio.isConnected || model.chat.isBusy)
+            .help(model.chat.composerAttachments.isEmpty ? "Select what to ask about (⇧⌘↩)" : "Ask about your selection (⇧⌘↩)")
 
-            IconButton("camera.viewfinder", help: "Capture to composer (⇧⌘S)") { studio.captureToComposer() }
+            IconButton("rectangle.dashed", help: "Freeze the live view and drag to select (⇧⌘S)") { studio.beginRegionSelection() }
                 .disabled(!studio.canCapture)
 
             Hairline(vertical: true).frame(height: 18).padding(.horizontal, 4)

@@ -171,17 +171,17 @@ private struct StudioMenuSection: View {
             }
             HStack(spacing: 8) {
                 Button {
-                    studio.captureAndAsk()
+                    if !studio.askAboutSelection() { model.showMainWindow() }
                 } label: {
-                    Label("Capture & Ask", systemImage: "sparkles").frame(maxWidth: .infinity)
+                    Label("Ask", systemImage: "sparkles").frame(maxWidth: .infinity)
                 }
                 .buttonStyle(TandemButtonStyle(.primary, size: .small))
-                .disabled(!studio.canCapture || model.chat.isBusy)
+                .disabled(!studio.isConnected || model.chat.isBusy)
                 Button {
-                    studio.captureToComposer()
+                    studio.beginRegionSelection()
                     model.showMainWindow()
                 } label: {
-                    Label("To Composer", systemImage: "camera.viewfinder").frame(maxWidth: .infinity)
+                    Label("Select Region", systemImage: "rectangle.dashed").frame(maxWidth: .infinity)
                 }
                 .buttonStyle(TandemButtonStyle(.secondary, size: .small))
                 .disabled(!studio.canCapture)

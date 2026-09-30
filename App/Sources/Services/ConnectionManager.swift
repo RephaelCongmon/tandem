@@ -384,7 +384,8 @@ final class ConnectionManager {
         }
         networkDiscoveries = byID
         rebuildNearby()
-        if AppEnvironment.autoPair, desiredSourceID == nil, connections.isEmpty, let first = byID.keys.sorted().first {
+        let pairable = byID.filter { entry in AppEnvironment.autoPairName.map { $0 == entry.value.name } ?? true }
+        if AppEnvironment.autoPair, desiredSourceID == nil, connections.isEmpty, let first = pairable.keys.sorted().first {
             connect(to: first)
         }
         maybeAutoConnect()
@@ -598,7 +599,7 @@ final class ConnectionManager {
             lastFailure = nil
         }
         rebuildNearby()
-        connection.send(.control(.hello(PeerHello(role: role?.peerRole ?? .studio, appVersion: AppEnvironment.shortVersion, capabilities: [PeerHello.Capability.audio, PeerHello.Capability.peerUpdate]))))
+        connection.send(.control(.hello(PeerHello(role: role?.peerRole ?? .studio, appVersion: AppEnvironment.shortVersion, capabilities: [PeerHello.Capability.audio, PeerHello.Capability.peerUpdate, PeerHello.Capability.regionSnapshots]))))
         log.info("Connected to \(peer.name, privacy: .private) over \(linkKind.displayName, privacy: .public)")
         onEstablished?(connection)
     }

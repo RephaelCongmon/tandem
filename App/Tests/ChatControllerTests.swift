@@ -77,8 +77,60 @@ final class ChatControllerTests: XCTestCase {
             snapshots: SnapshotStore(directory: nil, keepOnDisk: false),
             clientFactory: { _ in client }
         )
-        chat.attachLiveSnapshot = false
         return chat
+    }
+
+    /// A selected region waiting in the composer.
+    private func addPicture(to chat: ChatController) throws {
+        let pixels = try XCTUnwrap(CGContext(data: nil, width: 32, height: 20, bitsPerComponent: 8, bytesPerRow: 0, space: ImageCodec.srgb, bitmapInfo: CGImageAlphaInfo.premultipliedFirst.rawValue))
+        let jpeg = try XCTUnwrap(ImageCodec.jpeg(try XCTUnwrap(pixels.makeImage()), quality: 0.9))
+        let header = SnapshotHeader(id: UUID(), trigger: .manual, note: nil, pixelWidth: jpeg.width, pixelHeight: jpeg.height, byteCount: jpeg.data.count, chunkCount: 1, mimeType: "image/jpeg", capturedAt: Date(), captureTitle: "Display")
+        chat.addToComposer(ReceivedSnapshot(header: header, data: jpeg.data, transferSeconds: 0), sourceName: "Source Mac")
+    }
+
+    private func sentImages(_ client: ScriptedClient) -> Int {
+        client.requests.first?.turns.first?.parts.filter { if case .image = $0 { return true } else { return false } }.count ?? 0
+    }
+
+    func testSendIncludesTheSelectedPictures() async throws {
+        let client = ScriptedClient(.reply(greeting))
+        let chat = makeChat(client)
+        try addPicture(to: chat)
+        chat.composerText = "What does this say?"
+        chat.sendFromComposer()
+        await waitUntilIdle(chat)
+        XCTAssertEqual(sentImages(client), 1)
+        XCTAssertTrue(chat.composerAttachments.isEmpty)
+    }
+
+    func testExcludedPicturesStayInTheComposer() async throws {
+        let client = ScriptedClient(.reply(greeting))
+        let chat = makeChat(client)
+        try addPicture(to: chat)
+        chat.includesPictures = false
+        chat.composerText = "Just a question"
+        chat.sendFromComposer()
+        await waitUntilIdle(chat)
+        XCTAssertEqual(client.requests.count, 1)
+        XCTAssertEqual(sentImages(client), 0)
+        XCTAssertEqual(chat.composerAttachments.count, 1)
+    }
+
+    func testSkillThatSkipsPicturesLeavesThemForLater() async throws {
+        let client = ScriptedClient(.reply(greeting))
+        let chat = makeChat(client)
+        try addPicture(to: chat)
+        chat.send(skill: PromptSkill(title: "Follow-up", symbol: "ear", instructions: "Answer the last question.", attachesScreenshot: false))
+        await waitUntilIdle(chat)
+        XCTAssertEqual(sentImages(client), 0)
+        XCTAssertEqual(chat.composerAttachments.count, 1)
+    }
+
+    func testAddingAPictureIncludesPicturesAgain() throws {
+        let chat = makeChat(ScriptedClient(.reply([])))
+        chat.includesPictures = false
+        try addPicture(to: chat)
+        XCTAssertTrue(chat.includesPictures)
     }
 
     private func waitUntilIdle(_ chat: ChatController, timeout: TimeInterval = 3) async {

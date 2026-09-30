@@ -203,7 +203,6 @@ final class SettingsStore {
     var systemPrompt: String = SettingsStore.defaultSystemPrompt { didSet { store(systemPrompt, "ai.systemPrompt") } }
     var maxImagesInContext: Int = 4 { didSet { store(maxImagesInContext, "ai.maxImages") } }
     var liveQuality: LiveQualityPreset = .balanced { didSet { store(liveQuality, "studio.liveQuality") } }
-    var attachLiveSnapshot: Bool = true { didSet { store(attachLiveSnapshot, "studio.attachLive") } }
     var pushBehavior: PushBehavior = .askImmediately { didSet { store(pushBehavior, "studio.pushBehavior") } }
     var pushPrompt: String = SettingsStore.defaultPushPrompt { didSet { store(pushPrompt, "studio.pushPrompt") } }
     var mirrorReplies: Bool = true { didSet { store(mirrorReplies, "studio.mirrorReplies") } }
@@ -296,7 +295,6 @@ final class SettingsStore {
         systemPrompt = load("ai.systemPrompt", Self.defaultSystemPrompt)
         maxImagesInContext = load("ai.maxImages", 4)
         liveQuality = load("studio.liveQuality", .balanced)
-        attachLiveSnapshot = load("studio.attachLive", true)
         pushBehavior = load("studio.pushBehavior", .askImmediately)
         pushPrompt = load("studio.pushPrompt", Self.defaultPushPrompt)
         mirrorReplies = load("studio.mirrorReplies", true)

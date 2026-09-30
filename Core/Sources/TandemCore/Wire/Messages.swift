@@ -75,6 +75,8 @@ public struct PeerHello: Codable, Sendable, Hashable {
         public static let audio = "audio"
         /// Source: installs a newer Tandem sent by its Studio (see `UpdateOffer`).
         public static let peerUpdate = "update"
+        /// Source: holds a frozen still and sends regions of it (`SnapshotFreeze`, `SnapshotCrop`).
+        public static let regionSnapshots = "regions"
     }
 
     public var role: PeerRole
@@ -170,13 +172,21 @@ public struct SnapshotRequest: Codable, Sendable, Hashable {
     /// When set, the Source replies `snapshotUnchanged` instead of sending an image
     /// if the screen differs from the last snapshot it sent by less than this (0…1).
     public var skipIfUnchangedBelow: Double?
+    /// Hold a native still for region crops, replying with a preview (or
+    /// `snapshotUnchanged` when the Studio's frozen frame already matches it).
+    public var freeze: SnapshotFreeze?
+    /// Send a region of a held still, never of a newer screen.
+    public var crop: SnapshotCrop?
 
-    public init(id: UUID = UUID(), trigger: SnapshotTrigger, maxDimension: Int, quality: Double, skipIfUnchangedBelow: Double? = nil) {
+    public init(id: UUID = UUID(), trigger: SnapshotTrigger, maxDimension: Int, quality: Double, skipIfUnchangedBelow: Double? = nil,
+                freeze: SnapshotFreeze? = nil, crop: SnapshotCrop? = nil) {
         self.id = id
         self.trigger = trigger
         self.maxDimension = maxDimension
         self.quality = quality
         self.skipIfUnchangedBelow = skipIfUnchangedBelow
+        self.freeze = freeze
+        self.crop = crop
     }
 }
 
@@ -407,6 +417,8 @@ public enum ControlMessage: Codable, Sendable, Hashable {
     case snapshotHeader(SnapshotHeader)
     case snapshotUnchanged(id: UUID)
     case snapshotFailed(id: UUID, reason: String)
+    /// The Studio finished selecting regions: the Source frees the held still.
+    case releaseFrozenSnapshot(id: UUID)
     case sourceCatalogRequest
     case sourceCatalog([CaptureSourceDescriptor])
     case selectSource(CaptureSourceID)

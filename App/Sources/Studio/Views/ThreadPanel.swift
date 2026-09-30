@@ -198,7 +198,7 @@ private struct ThreadEmptyState: View {
                     systemImage: "sparkles",
                     title: model.studio.isConnected ? "Ask about \(model.studio.sourceName ?? "the other Mac")" : "Start a conversation",
                     message: model.studio.isConnected
-                        ? "Each question includes a fresh screenshot of the shared screen. Add your own context, or mark up a capture first."
+                        ? "Select Region (⇧⌘S) freezes the live view: drag over what matters, as many times as you like. Questions include only the pictures you pick."
                         : "Connect your other Mac to include its screen, or just type a question."
                 )
                 LazyVGrid(columns: [GridItem(.adaptive(minimum: 210), spacing: 10)], spacing: 10) {
