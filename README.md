@@ -173,6 +173,12 @@ Speech recognition uses [Parakeet TDT 0.6B v2](https://huggingface.co/nvidia/par
 Newest first. Each version is also published, with its download, on the repository's [Releases](https://github.com/RephaelCongmon/tandem/releases) page, and **Update Now** in the app installs it.
 
 <!-- update-log:start -->
+### 1.5.1 — September 30, 2026
+
+- **Reconnects after sleep, every time:** the shared Mac used to stop answering after a handful of reconnects (for example after its lid closed a few times), until Tandem was reopened on it. It now takes every reconnect. If your shared Mac is on an older version, quit and reopen Tandem on it once; the Studio then updates it.
+- **Says when macOS blocks the local network:** after an update, macOS sometimes keeps Tandem off the local network even though Privacy & Security › Local Network shows it allowed. Tandem now notices, shows a banner with a button that opens that setting (switch Tandem off and back on), and reconnects by itself once it's fixed.
+- Clearer messages when the other Mac takes the connection but Tandem on it doesn't answer, or when it can't be reached.
+
 ### 1.5.0 — September 30, 2026
 
 - **Codex on your ChatGPT subscription:** pick **Codex — your ChatGPT subscription** in Settings › AI to ask GPT-6.1 Sol, GPT-6 Astra and the other models your plan offers. It works through the Codex app on this Mac, with no API key, just like Claude Code.
