@@ -243,6 +243,41 @@ extension View {
     }
 }
 
+/// macOS is keeping Tandem off the local network; the fix is one switch in System Settings.
+struct LocalNetworkBlockedBanner: View {
+    /// A narrow column (the sidebar): shorter text, button below.
+    var compact = false
+
+    var body: some View {
+        if compact {
+            VStack(alignment: .leading, spacing: 6) {
+                Label("macOS is blocking Tandem from the local network. Allow it under Local Network, or if it's on, switch it off and back on.", systemImage: "wifi.exclamationmark")
+                    .font(TandemFont.caption)
+                    .foregroundStyle(Theme.textPrimary)
+                    .lineLimit(nil)
+                    .fixedSize(horizontal: false, vertical: true)
+                Button("Open Settings", action: openSettings)
+                    .buttonStyle(TandemButtonStyle(.secondary, size: .small))
+            }
+            .padding(10)
+            .frame(maxWidth: .infinity, alignment: .leading)
+            .background(RoundedRectangle(cornerRadius: Radius.m, style: .continuous).fill(Theme.warning.opacity(0.12)))
+            .overlay(RoundedRectangle(cornerRadius: Radius.m, style: .continuous).strokeBorder(Theme.warning.opacity(0.25), lineWidth: 1))
+        } else {
+            InlineBanner(
+                text: ConnectionManager.localNetworkBlockedMessage,
+                systemImage: "wifi.exclamationmark",
+                actionTitle: "Open Settings",
+                action: openSettings
+            )
+        }
+    }
+
+    private func openSettings() {
+        NSWorkspace.shared.open(ConnectionManager.localNetworkSettingsURL)
+    }
+}
+
 /// A banner row for errors/notices at the top of a panel.
 struct InlineBanner: View {
     let text: String

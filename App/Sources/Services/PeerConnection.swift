@@ -60,6 +60,10 @@ final class PeerConnection: Identifiable {
     private(set) var snapshotProgress: SnapshotAssembler.Progress?
     /// Set as soon as a close is requested, so replacements aren't blocked by it.
     private(set) var isClosing = false
+    /// The transport connected (the handshake started), even if the session never came up.
+    private(set) var reachedPeer = false
+    /// Over the network (not Bluetooth).
+    nonisolated var isNetwork: Bool { link.transport is NetworkTransport }
 
     @ObservationIgnored var onControl: ((ControlMessage) -> Void)?
     @ObservationIgnored var onSnapshot: ((ReceivedSnapshot) -> Void)?
@@ -127,6 +131,10 @@ final class PeerConnection: Identifiable {
     func update(phase: Phase) {
         self.phase = phase
         if phase == .connected, establishedAt == nil { establishedAt = Date() }
+        switch phase {
+        case .handshaking, .pairing, .connected: reachedPeer = true
+        case .connecting, .closed: break
+        }
     }
 
     func update(peer: DeviceIdentity?, newlyPaired: Bool? = nil) {

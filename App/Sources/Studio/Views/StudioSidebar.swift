@@ -136,10 +136,14 @@ struct NearbyDeviceList: View {
             ForEach(devices) { device in
                 DeviceRow(device: device, compact: compact)
             }
-            if let failure = model.connections.lastFailure {
+            if model.connections.localNetworkBlocked {
+                LocalNetworkBlockedBanner(compact: compact)
+                    .padding(.top, 2)
+            } else if let failure = model.connections.lastFailure {
                 Text(failure.message)
                     .font(TandemFont.caption)
                     .foregroundStyle(Theme.warning)
+                    .lineLimit(6)
                     .fixedSize(horizontal: false, vertical: true)
                     .padding(.top, 2)
             }

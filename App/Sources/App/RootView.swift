@@ -167,6 +167,9 @@ struct OutgoingPairingSheet: View {
                         .font(TandemFont.callout)
                         .foregroundStyle(Theme.textSecondary)
                 }
+            } else if model.connections.localNetworkBlocked {
+                LocalNetworkBlockedBanner()
+                    .frame(maxWidth: 400)
             } else {
                 ProgressView("Connecting securely…")
                     .controlSize(.regular)

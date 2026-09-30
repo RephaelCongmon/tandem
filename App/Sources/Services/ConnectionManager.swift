@@ -57,6 +57,9 @@ final class ConnectionManager {
     /// Last user-visible connection problem, per device.
     private(set) var lastFailure: (deviceID: String?, message: String)?
     private(set) var reconnectAt: Date?
+    /// macOS is keeping Tandem off the local network even if System Settings shows it allowed
+    /// (see `LocalNetworkAccess`); switching Tandem off and on under Local Network fixes it.
+    private(set) var localNetworkBlocked = false
 
     @ObservationIgnored var onEstablished: ((PeerConnection) -> Void)?
     @ObservationIgnored var onClosed: ((PeerConnection, PeerLinkCloseReason) -> Void)?
@@ -84,9 +87,13 @@ final class ConnectionManager {
     /// Studios the Source user sent away; their reconnects are refused for a while.
     @ObservationIgnored private var sessionDeniedUntil: [String: Date] = [:]
     @ObservationIgnored private var reachableTargets: Set<String> = []
+    @ObservationIgnored private var localNetworkCheck: Task<Void, Never>?
     @ObservationIgnored private let log = Logger(subsystem: "com.rofel.tandem", category: "Connections")
 
     static let maxIncomingSessions = 4
+
+    static let localNetworkBlockedMessage = "macOS isn't letting Tandem use the local network, so it can't reach your other Mac. Allow Tandem in Privacy & Security › Local Network. If it's already on, switch it off and back on."
+    static let localNetworkSettingsURL = URL(string: "x-apple.systempreferences:com.apple.preference.security?Privacy_LocalNetwork")!
 
     init(settings: SettingsStore, trust: TrustedPeerStore, identity: DeviceIdentity) {
         self.settings = settings
@@ -111,6 +118,7 @@ final class ConnectionManager {
             }
         }
         startMaintenance()
+        checkLocalNetwork()
     }
 
     func deactivate() {
@@ -119,6 +127,9 @@ final class ConnectionManager {
         reconnectAt = nil
         maintenanceTimer?.invalidate()
         maintenanceTimer = nil
+        localNetworkCheck?.cancel()
+        localNetworkCheck = nil
+        localNetworkBlocked = false
         for connection in connections { connection.close(reason: "Tandem changed modes.") }
         listener?.stop()
         listener = nil
@@ -634,15 +645,80 @@ final class ConnectionManager {
             break
         default:
             if connection.direction == .outgoing, connection.establishedAt == nil || !reason.isRecoverable {
-                lastFailure = (deviceID, reason.userMessage)
+                lastFailure = (deviceID, failureMessage(for: connection, reason: reason))
             }
             if case .handshake = reason, connection.direction == .outgoing, !reason.isRecoverable {
                 if desiredSourceID == deviceID { desiredSourceID = nil }
             }
         }
         rebuildNearby()
+        // A network attempt that never got through may be macOS blocking Tandem.
+        if connection.direction == .outgoing, connection.isNetwork, !connection.reachedPeer, reason != .closedLocally {
+            checkLocalNetwork()
+        }
         if connection.direction == .outgoing, let deviceID, reason.isRecoverable {
             scheduleReconnectIfNeeded(for: deviceID)
+        }
+    }
+
+    /// What to tell the user about a session that didn't come up (or dropped).
+    private func failureMessage(for connection: PeerConnection, reason: PeerLinkCloseReason) -> String {
+        guard connection.establishedAt == nil, connection.isNetwork else { return reason.userMessage }
+        let name = connection.peer?.name ?? "The other Mac"
+        if localNetworkBlocked { return Self.localNetworkBlockedMessage }
+        switch reason {
+        case .timedOut where connection.reachedPeer:
+            // The Mac took the connection, but Tandem there never answered.
+            return "\(name) took the connection, but Tandem on it isn't answering. If this keeps happening, quit and reopen Tandem on \(name)."
+        case .timedOut, .transport:
+            return "Couldn't reach \(name) over the network. Make sure Tandem is open on it. If it was just updated, macOS may be blocking it there: on \(name), switch Tandem off and back on in System Settings › Privacy & Security › Local Network."
+        default:
+            return reason.userMessage
+        }
+    }
+
+    // MARK: Local network access
+
+    /// Asks macOS whether Tandem may use the local network, and reconnects once it may again.
+    func checkLocalNetwork() {
+        guard role != nil, localNetworkCheck == nil else { return }
+        #if DEBUG
+        if simulatedLocalNetwork != nil { return }
+        #endif
+        localNetworkCheck = Task { [weak self] in
+            let access = await LocalNetworkAccess.check()
+            guard !Task.isCancelled, let self else { return }
+            self.localNetworkCheck = nil
+            self.apply(access)
+        }
+    }
+
+    #if DEBUG
+    /// Shows the blocked state without a blocked Mac (UI checks); `.allowed` ends it.
+    func debugSimulateLocalNetwork(_ access: LocalNetworkAccess) {
+        simulatedLocalNetwork = access == .allowed ? nil : access
+        apply(access)
+    }
+    @ObservationIgnored private var simulatedLocalNetwork: LocalNetworkAccess?
+    #endif
+
+    private func apply(_ access: LocalNetworkAccess) {
+        switch access {
+        case .denied:
+            if !localNetworkBlocked { log.error("macOS is blocking Tandem from the local network") }
+            localNetworkBlocked = true
+            if role == .studio, let target = desiredSourceID ?? settings.lastSourceID {
+                lastFailure = (target, Self.localNetworkBlockedMessage)
+            }
+        case .allowed:
+            guard localNetworkBlocked else { return }
+            localNetworkBlocked = false
+            log.notice("Local network access is back")
+            if lastFailure?.message == Self.localNetworkBlockedMessage { lastFailure = nil }
+            browser?.refresh()
+            retryNow()
+        case .unknown:
+            break
         }
     }
 
@@ -709,6 +785,7 @@ final class ConnectionManager {
                 guard let self else { return }
                 self.pairingDeniedUntil = self.pairingDeniedUntil.filter { $0.value > Date() }
                 self.sessionDeniedUntil = self.sessionDeniedUntil.filter { $0.value > Date() }
+                if self.localNetworkBlocked { self.checkLocalNetwork() }
                 self.maybeAutoConnect()
             }
         }
@@ -721,13 +798,17 @@ final class ConnectionManager {
         // Ignore the initial report; react to real changes once the network is usable.
         guard lastPathStatus != nil, status == .satisfied else { return }
         browser?.refresh()
+        checkLocalNetwork()
         maybeAutoConnect()
     }
 
     private func observeSystemEvents() {
         let center = NSWorkspace.shared.notificationCenter
         observers.append(center.addObserver(forName: NSWorkspace.didWakeNotification, object: nil, queue: .main) { [weak self] _ in
-            MainActor.assumeIsolated { self?.retryNow() }
+            MainActor.assumeIsolated {
+                self?.checkLocalNetwork()
+                self?.retryNow()
+            }
         })
         let monitor = NWPathMonitor()
         monitor.pathUpdateHandler = { [weak self] path in

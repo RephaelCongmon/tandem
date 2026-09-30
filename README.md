@@ -116,6 +116,8 @@ If discovery is blocked (guest or corporate Wi-Fi with client isolation), use **
 ## Troubleshooting
 
 - **The other Mac doesn't appear.** Make sure Tandem is open on both Macs with opposite roles, that Local Network access is allowed (System Settings › Privacy & Security › Local Network), and that Wi-Fi is on. Try a cable or Connect by Address.
+- **"macOS isn't letting Tandem use the local network."** macOS sometimes keeps blocking an app after it updates, even though System Settings shows it allowed. Click **Open Settings** (Privacy & Security › Local Network), switch Tandem off and back on, and Tandem reconnects by itself.
+- **"Tandem on it isn't answering."** The other Mac took the connection but Tandem there didn't respond. Quit and reopen Tandem on that Mac. Versions before 1.5.1 stopped answering after a few reconnects (for example after sleep); reopening once fixes it, and the Studio then updates it.
 - **"Screen Recording permission is needed."** Enable Tandem in System Settings › Privacy & Security › Screen & System Audio Recording, then reopen Tandem on the shared Mac.
 - **"The pairing is no longer valid."** One Mac was reset or unpaired. Pair again from the Studio.
 - **Live view is off / paused.** The Studio pauses the stream while its window is hidden, and the Source pauses while it's locked or paused — snapshots and asking still work whenever the Source is sharing.
@@ -152,6 +154,8 @@ swift scripts/debug-command.swift B listen on                    # transcribe th
 swift scripts/debug-command.swift B skill 3                      # press Follow-up
 swift scripts/debug-command.swift B transcript                   # log the live transcript
 swift scripts/debug-command.swift B lastAnswer                   # log the last question, its transcript and the answer
+swift scripts/debug-command.swift A drop                         # cut every link without a goodbye, like sleep
+swift scripts/debug-command.swift B localNetwork denied          # show the blocked-network state (allowed ends it)
 ```
 
 The live Parakeet test (`ParakeetLiveTests`) runs when `TANDEM_PARAKEET_MODELS` points at a folder holding `parakeet-tdt-0.6b-v2`; `scripts/test_all.sh` finds the app's downloaded model by itself. Development builds only update each other with `-TandemPeerUpdates YES`.

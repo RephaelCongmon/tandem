@@ -118,6 +118,14 @@ enum DebugCommands {
             model.toasts.show(argument, systemImage: "sparkles")
         case "kick":
             for viewer in model.source.viewers { model.connections.disconnect(viewer.connection) }
+        case "localNetwork":
+            model.connections.debugSimulateLocalNetwork(LocalNetworkAccess(rawValue: argument) ?? .denied)
+        case "drop":
+            // Cuts every link without a goodbye, like sleep or a network drop.
+            for connection in model.connections.connections {
+                let link = connection.link
+                link.queue.async { link.transport.close() }
+            }
         case "hotkey":
             if let action = HotkeyAction(rawValue: argument) { model.hotkeys.perform(action) }
         case "listen":
@@ -197,6 +205,7 @@ enum DebugCommands {
         lines.append("source.audio=\(source.audioState) listeners=\(source.audioListenerIDs.count) requests=\(source.viewers.map { String(describing: $0.audioRequest) })")
         lines.append("chat.threads=\(model.chat.threads.count) streaming=\(model.chat.streaming != nil) banner=\(model.chat.banner ?? "-")")
         lines.append("auto=\(model.settings.autoCaptureEnabled) last=\(studio.lastAutoResult ?? "-")")
+        lines.append("network.blocked=\(model.connections.localNetworkBlocked) failure=\(model.connections.lastFailure?.message ?? "-")")
         // Logged (not written to the container) so tools can read it without
         // triggering the "access data from other apps" privacy prompt.
         let logger = Logger(subsystem: "com.rofel.tandem", category: "Debug")

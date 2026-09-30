@@ -12,6 +12,9 @@ struct SourceView: View {
             Hairline(vertical: true)
             ScrollView {
                 VStack(alignment: .leading, spacing: Spacing.l) {
+                    if model.connections.localNetworkBlocked {
+                        LocalNetworkBlockedBanner(compact: true)
+                    }
                     if !model.source.hasScreenPermission && CaptureService.requiresScreenPermission(model.source.selectedSource) {
                         PermissionCard()
                     }

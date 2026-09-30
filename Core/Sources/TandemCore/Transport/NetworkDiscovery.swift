@@ -28,6 +28,8 @@ public final class BonjourListener {
     private let queue: DispatchQueue
     private var identity: DeviceIdentity
     private var role: PeerRole
+    /// Off in tests, so they don't show up on the network.
+    private let advertises: Bool
     private var listener: NWListener?
     private var triedPreferredPort = false
     private var restartWorkItem: DispatchWorkItem?
@@ -36,10 +38,11 @@ public final class BonjourListener {
 
     public private(set) var port: UInt16?
 
-    public init(identity: DeviceIdentity, role: PeerRole, queue: DispatchQueue) {
+    public init(identity: DeviceIdentity, role: PeerRole, queue: DispatchQueue, advertises: Bool = true) {
         self.identity = identity
         self.role = role
         self.queue = queue
+        self.advertises = advertises
     }
 
     public func start() {
@@ -66,7 +69,7 @@ public final class BonjourListener {
         queue.async { [self] in
             self.identity = identity
             self.role = role
-            listener?.service = makeService()
+            if advertises { listener?.service = makeService() }
         }
     }
 
@@ -115,8 +118,10 @@ public final class BonjourListener {
 
     private func configure(_ listener: NWListener) {
         self.listener = listener
-        listener.service = makeService()
-        listener.newConnectionLimit = 8
+        if advertises { listener.service = makeService() }
+        // No `newConnectionLimit`: it counts down with every connection ever delivered (it isn't
+        // a cap on open ones), so a limit left the Source deaf after that many reconnects.
+        // ConnectionManager caps concurrent sessions instead.
         listener.stateUpdateHandler = { [weak self, weak listener] state in
             guard let self, let listener, listener === self.listener else { return }
             self.handle(state, listener: listener)
