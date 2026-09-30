@@ -166,6 +166,16 @@ Speech recognition uses [Parakeet TDT 0.6B v2](https://huggingface.co/nvidia/par
 Newest first. Each version is also published, with its download, on the repository's [Releases](https://github.com/RephaelCongmon/tandem/releases) page, and **Update Now** in the app installs it.
 
 <!-- update-log:start -->
+### 1.4.0 — September 29, 2026
+
+- **More accurate transcripts:** Listen now uses NVIDIA's Parakeet model on the Neural Engine. On real conversation it made about a quarter fewer mistakes than Apple's recognizer (14.4% vs 19.7% word errors), and it gets names and jargon right more often. The model (451 MB) downloads once, in the background, to the asking Mac only.
+- **The shared Mac updates itself:** after Update Now on the asking Mac, it sends the new version to the shared Mac over the encrypted link. The shared Mac checks it's signed by the same developer, installs it and restarts, in about 3 seconds. No AirDrop and no GitHub access needed there. (Update the shared Mac to 1.4 by hand one last time.)
+- **Names and terms:** list people, companies and jargon in Settings › Listening so the AI spells them right.
+- **Faster reconnects** after the shared Mac restarts: about 3 seconds instead of about 15.
+- **Listen starts in a fraction of a second,** and nothing said while it starts is lost.
+- Settings › Listening can switch back to Apple's recognizer. Other languages use it automatically.
+- Credits: Parakeet TDT 0.6B v2 by NVIDIA (CC-BY-4.0), Core ML conversion by FluidInference, and FluidAudio (Apache-2.0).
+
 ### 1.3.0 — September 29, 2026
 
 - **Listen:** the shared Mac's computer audio (a meeting or call) is transcribed live on this Mac, on-device, about a second behind. Live captions sit above the skill buttons, and the full transcript is a click away.
