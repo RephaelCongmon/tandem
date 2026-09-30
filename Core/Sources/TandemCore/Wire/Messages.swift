@@ -75,6 +75,8 @@ public struct PeerHello: Codable, Sendable, Hashable {
         public static let audio = "audio"
         /// Source: installs a newer Tandem sent by its Studio (see `UpdateOffer`).
         public static let peerUpdate = "update"
+        /// Source: retains a frozen frame and returns only the selected region.
+        public static let regionSnapshots = "regionSnapshots"
     }
 
     public var role: PeerRole
@@ -170,13 +172,21 @@ public struct SnapshotRequest: Codable, Sendable, Hashable {
     /// When set, the Source replies `snapshotUnchanged` instead of sending an image
     /// if the screen differs from the last snapshot it sent by less than this (0…1).
     public var skipIfUnchangedBelow: Double?
+    /// Prepare a small preview while retaining the native frame on the Source.
+    public var prepareRegionSelection: Bool?
+    /// Crop this region from the retained frame, never from a newer screen.
+    public var region: SnapshotRegion?
+    public var frozenSnapshotID: UUID?
 
-    public init(id: UUID = UUID(), trigger: SnapshotTrigger, maxDimension: Int, quality: Double, skipIfUnchangedBelow: Double? = nil) {
+    public init(id: UUID = UUID(), trigger: SnapshotTrigger, maxDimension: Int, quality: Double, skipIfUnchangedBelow: Double? = nil, prepareRegionSelection: Bool? = nil, region: SnapshotRegion? = nil, frozenSnapshotID: UUID? = nil) {
         self.id = id
         self.trigger = trigger
         self.maxDimension = maxDimension
         self.quality = quality
         self.skipIfUnchangedBelow = skipIfUnchangedBelow
+        self.prepareRegionSelection = prepareRegionSelection
+        self.region = region
+        self.frozenSnapshotID = frozenSnapshotID
     }
 }
 
@@ -404,6 +414,8 @@ public enum ControlMessage: Codable, Sendable, Hashable {
     case keyframeRequest
     case videoAck(VideoAck)
     case snapshotRequest(SnapshotRequest)
+    /// Releases the native frame when the Studio cancels region selection.
+    case discardRegionSelection(id: UUID)
     case snapshotHeader(SnapshotHeader)
     case snapshotUnchanged(id: UUID)
     case snapshotFailed(id: UUID, reason: String)

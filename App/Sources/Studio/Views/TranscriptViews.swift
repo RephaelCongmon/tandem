@@ -3,7 +3,7 @@ import SwiftUI
 import TandemCore
 import TandemUI
 
-/// "Listen" next to "Live screen": transcribe the shared Mac's computer audio.
+/// "Listen" in the composer: transcribe the shared Mac's computer audio.
 struct ListenToggleChip: View {
     @Environment(AppModel.self) private var model
 

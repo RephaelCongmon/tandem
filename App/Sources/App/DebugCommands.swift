@@ -47,6 +47,10 @@ enum DebugCommands {
             model.studio.captureAndAsk()
         case "captureToComposer":
             model.studio.captureToComposer()
+        case "connectNamedSource":
+            if let peer = model.connections.nearby.first(where: { $0.name == argument }) {
+                model.connections.connect(to: peer.id)
+            }
         case "editFirstAttachment":
             model.chat.editRequest = model.chat.composerAttachments.first?.id
         case "push":
@@ -204,6 +208,8 @@ enum DebugCommands {
         lines.append("source.screenPermission=\(source.hasScreenPermission) preflight=\(CGPreflightScreenCaptureAccess())")
         lines.append("source.audio=\(source.audioState) listeners=\(source.audioListenerIDs.count) requests=\(source.viewers.map { String(describing: $0.audioRequest) })")
         lines.append("chat.threads=\(model.chat.threads.count) streaming=\(model.chat.streaming != nil) banner=\(model.chat.banner ?? "-")")
+        lines.append("chat.pictures=\(model.chat.composerAttachments.map { "\($0.id):\($0.attachment.pixelWidth)x\($0.attachment.pixelHeight):\($0.attachment.capturedAt.timeIntervalSince1970)" }) use=\(model.chat.useSelectedPictures)")
+        lines.append("studio.selection=\(studio.regionSelection.map { "\($0.preview.header.id):\($0.preview.header.capturedAt.timeIntervalSince1970)" } ?? "-") capturing=\(studio.isCapturing)")
         lines.append("auto=\(model.settings.autoCaptureEnabled) last=\(studio.lastAutoResult ?? "-")")
         lines.append("network.blocked=\(model.connections.localNetworkBlocked) failure=\(model.connections.lastFailure?.message ?? "-")")
         // Logged (not written to the container) so tools can read it without

@@ -351,8 +351,8 @@ private struct StudioSettings: View {
                     .font(TandemFont.caption).foregroundStyle(Theme.textSecondary)
             }
             Section("Asking") {
-                Toggle("Attach a fresh screenshot to every message", isOn: $settings.attachLiveSnapshot)
-                    .onChange(of: settings.attachLiveSnapshot) { _, value in model.chat.attachLiveSnapshot = value }
+                Text("Questions and skills use only the pictures selected in the composer. Choose Select region to add a picture, or turn off Use on send to keep it for later.")
+                    .font(TandemFont.caption).foregroundStyle(Theme.textSecondary)
                 Picker("When the shared Mac sends a snapshot", selection: $settings.pushBehavior) {
                     ForEach(PushBehavior.allCases) { Text($0.title).tag($0) }
                 }

@@ -58,11 +58,11 @@ final class HotkeyController {
                 systemImage: model.source.isSharingEnabled ? "play.circle.fill" : "pause.circle.fill"
             )
         case .captureAndAsk:
-            if model.studio.isConnected {
+            if model.chat.canSendFromComposer {
                 model.studio.captureAndAsk()
-                model.toasts.show("Capturing & asking…", systemImage: "sparkles")
+                model.toasts.show("Asking…", systemImage: "sparkles")
             } else {
-                model.toasts.show("No shared Mac connected", systemImage: "exclamationmark.triangle.fill", style: .warning)
+                model.toasts.show("Add a question or select a picture first", systemImage: "exclamationmark.triangle.fill", style: .warning)
             }
         case .captureToComposer:
             model.studio.captureToComposer()

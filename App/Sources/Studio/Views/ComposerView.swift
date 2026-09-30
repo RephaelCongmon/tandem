@@ -22,6 +22,7 @@ struct ComposerView: View {
 
     var body: some View {
         @Bindable var chat = model.chat
+        @Bindable var studio = model.studio
         VStack(alignment: .leading, spacing: 8) {
             if !chat.composerAttachments.isEmpty || model.studio.isConnected {
                 attachmentsRow
@@ -66,6 +67,10 @@ struct ComposerView: View {
             MarkupEditorSheet(attachment: attachment)
                 .environment(model)
         }
+        .sheet(item: $studio.regionSelection, onDismiss: { model.studio.cancelRegionSelection() }) { selection in
+            RegionCaptureSheet(selection: selection)
+                .environment(model)
+        }
         .onAppear { focused = true }
         .onChange(of: model.chat.editRequest) { _, id in
             guard let id else { return }
@@ -77,7 +82,7 @@ struct ComposerView: View {
 
     private var placeholder: String {
         if let name = model.studio.sourceName, model.studio.isConnected {
-            return model.chat.attachLiveSnapshot ? "Ask about \(name)'s screen…" : "Message…"
+            return "Ask about \(name)…"
         }
         return "Ask anything…"
     }
@@ -91,9 +96,7 @@ struct ComposerView: View {
     }
 
     private var canSend: Bool {
-        let chat = model.chat
-        let hasText = !chat.composerText.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
-        return !chat.isBusy && (hasText || !chat.composerAttachments.isEmpty || (chat.attachLiveSnapshot && model.studio.canCapture))
+        model.chat.canSendFromComposer
     }
 
     private func send() {
@@ -107,10 +110,10 @@ struct ComposerView: View {
         @Bindable var chat = model.chat
         return ScrollView(.horizontal, showsIndicators: false) {
             HStack(spacing: 8) {
-                if model.studio.isConnected {
-                    LiveToggleChip(isOn: $chat.attachLiveSnapshot, enabled: model.studio.canCapture)
-                    ListenToggleChip()
+                if !chat.composerAttachments.isEmpty {
+                    SelectedPicturesChip(isOn: $chat.useSelectedPictures, count: chat.composerAttachments.count)
                 }
+                if model.studio.isConnected { ListenToggleChip() }
                 ForEach(chat.composerAttachments) { item in
                     ComposerThumbnail(item: item) {
                         chat.beginEditing(item.id)
@@ -123,15 +126,16 @@ struct ComposerView: View {
                     Button {
                         model.studio.captureToComposer()
                     } label: {
-                        Image(systemName: model.studio.isCapturing ? "hourglass" : "plus.viewfinder")
+                        Label("Select region", systemImage: model.studio.isCapturing ? "hourglass" : "rectangle.dashed")
                             .font(.system(size: 14, weight: .semibold))
                             .foregroundStyle(Theme.textSecondary)
-                            .frame(width: 40, height: 40)
+                            .padding(.horizontal, 10)
+                            .frame(height: 40)
                             .background(RoundedRectangle(cornerRadius: Radius.s, style: .continuous).strokeBorder(Theme.strokeStrong, style: StrokeStyle(lineWidth: 1, dash: [4, 3])))
                     }
                     .buttonStyle(.plain)
-                    .disabled(!model.studio.canCapture)
-                    .help("Capture now to annotate before sending (⇧⌘S)")
+                    .disabled(!model.studio.canCapture || model.studio.isCapturing)
+                    .help("Freeze a frame, then drag to select a picture (⇧⌘S)")
                 }
             }
             .padding(.vertical, 2)
@@ -225,30 +229,29 @@ struct ComposerView: View {
     }
 }
 
-private struct LiveToggleChip: View {
+private struct SelectedPicturesChip: View {
     @Binding var isOn: Bool
-    let enabled: Bool
+    let count: Int
 
     var body: some View {
         Button {
             isOn.toggle()
         } label: {
             HStack(spacing: 6) {
-                Image(systemName: isOn ? "record.circle" : "circle.dashed")
-                    .foregroundStyle(isOn ? Theme.live : Theme.textTertiary)
+                Image(systemName: isOn ? "checkmark.circle.fill" : "circle.dashed")
+                    .foregroundStyle(isOn ? Theme.accent : Theme.textTertiary)
                 VStack(alignment: .leading, spacing: 0) {
-                    Text("Live screen").font(.system(size: 11.5, weight: .semibold))
-                    Text(isOn ? "Attached on send" : "Not attached").font(TandemFont.micro).foregroundStyle(Theme.textTertiary)
+                    Text("\(count) picture\(count == 1 ? "" : "s")").font(.system(size: 11.5, weight: .semibold))
+                    Text(isOn ? "Use on send" : "Excluded from send").font(TandemFont.micro).foregroundStyle(Theme.textTertiary)
                 }
             }
             .padding(.horizontal, 10)
             .frame(height: 40)
-            .background(RoundedRectangle(cornerRadius: Radius.s, style: .continuous).fill(isOn ? Theme.live.opacity(0.1) : Color.primary.opacity(0.04)))
-            .overlay(RoundedRectangle(cornerRadius: Radius.s, style: .continuous).strokeBorder(isOn ? Theme.live.opacity(0.35) : Theme.stroke, lineWidth: 1))
+            .background(RoundedRectangle(cornerRadius: Radius.s, style: .continuous).fill(isOn ? Theme.accent.opacity(0.1) : Color.primary.opacity(0.04)))
+            .overlay(RoundedRectangle(cornerRadius: Radius.s, style: .continuous).strokeBorder(isOn ? Theme.accent.opacity(0.35) : Theme.stroke, lineWidth: 1))
         }
         .buttonStyle(.plain)
-        .opacity(enabled ? 1 : 0.5)
-        .help(isOn ? "A fresh screenshot of the shared Mac is attached when you send" : "Send without a new screenshot")
+        .help(isOn ? "Send these selected pictures with your next question or skill" : "These pictures stay here for later; the next question sends without them")
     }
 }
 

@@ -9,7 +9,7 @@ It's built for moments like: your work laptop can't run AI tools but your person
 - **Real-time live view.** Hardware H.264 with low-latency rate control, ack-based flow control that bounds queuing to about one round trip, and adaptive bitrate, at 1080p/30–60 fps. The live HUD shows measured capture-to-display latency; two instances on one Mac measured **8–20 ms**, and between Macs you add your link's round-trip time (a cable or good Wi-Fi keeps it in the tens of milliseconds).
 - **Any link.** Wi-Fi/LAN, **peer-to-peer Wi-Fi** (no shared network needed — like AirDrop), **Thunderbolt/Ethernet cable**, or **Bluetooth LE** as a last resort. Tandem picks the best automatically and shows which one is in use.
 - **Ask Claude or OpenAI.** Streaming answers with Markdown, code blocks, tables and an optional reasoning summary. By default Tandem asks Claude through **Claude Code on your Claude subscription**, with no API key. Claude Opus 5.5 is the default (Fable 5.1, Sonnet 5.5 and Haiku 4.5 are available). Or use **Codex on your ChatGPT subscription**, also with no API key, for GPT-6.1 Sol (default), GPT-6 Astra, Sol and Luna, and whatever else your plan offers. An Anthropic or OpenAI API key (GPT‑6 Astra/Sol/Luna), or any OpenAI-compatible server (LM Studio, Ollama, vLLM), also works.
-- **Your context, your way.** Type a question; attach a fresh screenshot automatically; annotate it first (boxes, arrows, pen, highlight, text), **crop** to what matters and **redact** anything private before it leaves the Mac.
+- **Your context, your way.** Select a region of a frozen frame on the asking Mac, add several pictures, or ask with no pictures. The shared Mac sends only the selected region at full quality. Annotate it (boxes, arrows, pen, highlight, text), **crop** further or **redact** before sending it to AI.
 - **On demand, by shortcut, or on a schedule.** Global shortcuts on both Macs, a "send with note" panel on the Source, and auto-capture every N seconds — optionally only when the screen actually changed (detected on the Source, so unchanged screens aren't even sent), with an hourly cap.
 - **Hears the meeting, too.** Turn on **Listen** and the Source's computer audio streams to the Studio (Opus, about 30 kbps) and is transcribed on-device as it's spoken, about a second behind, by NVIDIA's **Parakeet** model on the Neural Engine (about a quarter fewer mistakes than Apple's recognizer on conversation). **Follow-up** finds the question just asked out loud, or on screen, and answers it in a few plain sentences. The transcript also goes with every other question, so the AI knows what's being discussed.
 - **Remembers the conversation.** With Claude Code, each thread keeps a live session, so a follow-up sends only what's new and starts answering sooner. Earlier questions, answers, screenshots and transcripts stay in context.
@@ -36,12 +36,13 @@ It's built for moments like: your work laptop can't run AI tools but your person
 
 **On the Studio (asking) Mac**
 - The left panel is the live view; the right panel is the conversation. Double-click the live view (or the ⤢ button) for focus mode.
-- Type a question and press ↩. With **Live screen** on, a fresh screenshot is attached when you send.
-- Press the capture button (or ⇧⌘S) to grab a screenshot into the composer, then click it to **annotate, crop or redact** before sending.
-- **Ask** (⇧⌘↩) captures and asks in one step using your typed text or the default prompt. Quick prompts live behind the ✦ menu.
+- Type a question and press ↩. Sending a question or pressing a skill never takes a new screenshot.
+- Click **Select region** (or ⇧⌘S) to freeze a frame. Drag over its preview, then click **Add region**. Until you add a region, no picture is selected. **Retake** gets a new frame; **Cancel** leaves the composer unchanged. Both Macs need this version of Tandem for region selection.
+- Repeat **Select region** to add several pictures. Remove any thumbnail with ×, or click it to **annotate, crop or redact**. The picture chip chooses **Use on send** or **Excluded from send**; excluded pictures remain in the composer for later.
+- **Ask** (⇧⌘↩) sends your text and selected pictures. Quick prompts live behind the ✦ menu.
 - The ⏱ control turns on **auto-capture** and sets the interval; the menu also chooses whether each capture asks the AI or just updates the composer, and whether to skip unchanged screens.
-- **Skills** are one-click buttons above the message field: **Debug**, **New Problem** and **Follow-up** to start with. Each one sends a fresh screenshot and what was just said (when **Listen** is on) plus that skill's detailed instructions, and anything you've typed goes along as extra context. The thread shows just the skill's name. ⌘1–⌘9 trigger the first nine. Add, edit and reorder skills in Settings › Skills, or with the ⚙ button next to them.
-- **Listen** (next to Live screen, or ⌥⌘L) transcribes the shared Mac's computer audio. See [Listening](#listening-to-the-shared-macs-audio).
+- **Skills** are one-click buttons above the message field: **Debug**, **New Problem** and **Follow-up** to start with. Each uses your selected pictures when **Use on send** is on, what was just said (when **Listen** is on), that skill's instructions, and your typed context. With no selected pictures it sends no new screenshot. The thread shows just the skill's name. ⌘1–⌘9 trigger the first nine. Add, edit and reorder skills in Settings › Skills, or with the ⚙ button next to them.
+- **Listen** (in the composer, or ⌥⌘L) transcribes the shared Mac's computer audio. See [Listening](#listening-to-the-shared-macs-audio).
 - The toolbar model menu switches provider, model and reasoning effort. The **Reasoning** chip under the message field changes the reasoning level (Fast, Balanced, Thorough, Deep, Maximum) from your next question on, offering only the levels the current model supports.
 - The **Source** menu on the live view lets you choose which display, window or camera the other Mac shares (if it allows that).
 
@@ -52,9 +53,9 @@ It's built for moments like: your work laptop can't run AI tools but your person
 
 ### Listening to the shared Mac's audio
 
-Turn on **Listen** in the composer (next to **Live screen**), or press ⌥⌘L. The shared Mac starts sending what it plays: the other people on a call, a video, anything but Tandem's own sounds and its microphone. The Studio transcribes it on-device. A two-line live caption above the skill buttons shows the words about a second after they're spoken. Next to it, **✓ Captured** means the speaker paused and everything said so far is in the transcript, so it will go with your next question. **Transcribing…** means the last words are still being recognized; pressing Follow-up then waits a moment for them. The ❝ button next to it opens the whole transcript, with timestamps, **Copy** and **Clear**.
+Turn on **Listen** in the composer, or press ⌥⌘L. The shared Mac starts sending what it plays: the other people on a call, a video, anything but Tandem's own sounds and its microphone. The Studio transcribes it on-device. A two-line live caption above the skill buttons shows the words about a second after they're spoken. Next to it, **✓ Captured** means the speaker paused and everything said so far is in the transcript, so it will go with your next question. **Transcribing…** means the last words are still being recognized; pressing Follow-up then waits a moment for them. The ❝ button next to it opens the whole transcript, with timestamps, **Copy** and **Clear**.
 
-When someone asks you something out loud, press **Follow-up** (⌘3 in Tandem, or ⌃⌥F from any app). It sends the transcript, a fresh screenshot and the conversation so far. The answer starts with the question as Claude understood it, in italics with obvious speech-to-text mistakes fixed, followed by a direct answer in a few sentences. If you press it while the last words are still being recognized, Tandem waits a moment (up to 0.8 s) for them.
+When someone asks you something out loud, press **Follow-up** (⌘3 in Tandem, or ⌃⌥F from any app). It sends the transcript, your selected pictures when **Use on send** is on, and the conversation so far. The answer starts with the question as Claude understood it, in italics with obvious speech-to-text mistakes fixed, followed by a direct answer in a few sentences. If you press it while the last words are still being recognized, Tandem waits a moment (up to 0.8 s) for them.
 
 - Each question carries what was said **since the thread's previous question**, up to 10 minutes (Settings › Listening › At most). Earlier transcripts stay with their messages, so later questions keep the whole conversation in mind. Each sent message shows a **Transcript · N words** chip you can expand.
 - Every question gets the transcript, not just Follow-up. Turn it off per skill in the skill's editor, or entirely in Settings › Listening.
@@ -86,8 +87,8 @@ Releases are public at [github.com/RephaelCongmon/tandem/releases](https://githu
 | Source | ⌃⌥S | Send snapshot |
 | Source | ⌃⌥N | Send snapshot with note… |
 | Source | ⌃⌥P | Pause / resume sharing |
-| Studio | ⌃⌥Space | Capture & ask |
-| Studio | ⌃⌥C | Capture to composer |
+| Studio | ⌃⌥Space | Ask with selected pictures |
+| Studio | ⌃⌥C | Select region |
 | Studio | ⌃⌥A | Toggle auto-capture |
 | Studio | ⌃⌥F | Answer the follow-up (runs the Follow-up skill) |
 | Studio | ⌃⌥L | Listen to the shared Mac's audio (on/off) |
@@ -146,7 +147,7 @@ The project uses a SwiftPM package (`Core/`: `TandemCore` + `TandemUI`) consumed
 `scripts/dev-two-macs.sh --mock-ai` starts a Source and a Studio side by side (isolated profiles via `-TandemProfile`), pairs them automatically over loopback, streams a synthetic test pattern (no Screen Recording permission needed), and points the Studio at a local mock of the Claude streaming API (`scripts/mock_ai_server.py`). Debug builds accept commands for automated checks:
 
 ```bash
-swift scripts/debug-command.swift B ask "What's on my screen?"   # Studio asks with a live snapshot
+swift scripts/debug-command.swift B ask "What's on my screen?"   # Studio asks with the prepared pictures, if any
 swift scripts/debug-command.swift A push "Why is this red?"      # Source pushes a snapshot with a note
 swift scripts/debug-command.swift B auto 5                       # auto-capture every 5 s
 swift scripts/debug-command.swift B dump                         # log engine state (log show --predicate 'category == "Debug"')

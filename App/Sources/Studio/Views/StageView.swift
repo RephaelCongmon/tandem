@@ -182,11 +182,16 @@ private struct StageToolbar: View {
                     .font(.system(size: 12.5, weight: .semibold))
             }
             .buttonStyle(TandemButtonStyle(.primary, size: .regular))
-            .disabled(!studio.canCapture || model.chat.isBusy)
-            .help("Capture the screen and ask (⇧⌘↩)")
+            .disabled(!model.chat.canSendFromComposer)
+            .help("Ask using your text and selected pictures (⇧⌘↩)")
 
-            IconButton("camera.viewfinder", help: "Capture to composer (⇧⌘S)") { studio.captureToComposer() }
-                .disabled(!studio.canCapture)
+            Button { studio.captureToComposer() } label: {
+                Label("Select region", systemImage: "rectangle.dashed")
+                    .font(.system(size: 12.5, weight: .semibold))
+            }
+            .buttonStyle(TandemButtonStyle(.secondary, size: .regular))
+            .disabled(!studio.canCapture || studio.isCapturing)
+            .help("Freeze a frame and drag to select a picture (⇧⌘S)")
 
             Hairline(vertical: true).frame(height: 18).padding(.horizontal, 4)
 

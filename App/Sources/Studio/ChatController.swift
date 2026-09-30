@@ -56,7 +56,8 @@ final class ChatController {
     var selectedThreadID: UUID?
     var composerText = ""
     private(set) var composerAttachments: [ComposerAttachment] = []
-    var attachLiveSnapshot: Bool
+    /// Per-question choice. Excluded pictures stay in the composer for later.
+    var useSelectedPictures = true
     private(set) var streaming: StreamingReply?
     private(set) var isCapturingForSend = false
     /// Sending waits a moment for the transcript to catch up with the newest speech.
@@ -103,7 +104,6 @@ final class ChatController {
         self.clientFactory = clientFactory
         self.claudeCodeExecutable = claudeCodeExecutable
         self.codexExecutable = codexExecutable
-        attachLiveSnapshot = settings.attachLiveSnapshot
         store = threadStore ?? ThreadStore(directory: AppEnvironment.threadsDirectory)
         self.snapshots = snapshots ?? SnapshotStore(directory: AppEnvironment.snapshotsDirectory, keepOnDisk: settings.keepImages)
         threads = store.loadAll()
@@ -136,7 +136,11 @@ final class ChatController {
         }
     }
 
-    var isBusy: Bool { streaming != nil || isCapturingForSend || !applyingMarkup.isEmpty }
+    var isBusy: Bool { streaming != nil || isCapturingForSend || !applyingMarkup.isEmpty || (studio?.isCapturing ?? false) }
+    var canSendFromComposer: Bool {
+        !isBusy && (!composerText.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+                    || (useSelectedPictures && !composerAttachments.isEmpty))
+    }
 
     /// Starts Claude Code ahead of the next question, so it doesn't wait for the CLI to launch.
     func prewarm() {
@@ -310,13 +314,12 @@ final class ChatController {
 
     // MARK: Sending
 
-    /// Sends the composer's text and attachments (plus a fresh live snapshot if enabled).
+    /// Sends only text and pictures the user has already selected.
     func sendFromComposer() {
         send(skill: nil)
     }
 
-    /// Sends `skill` with a fresh screenshot (when Live screen is on and the skill wants one),
-    /// anything in the composer, and the typed text as extra context.
+    /// Skills share the composer's deliberate picture selection and typed context.
     func send(skill: PromptSkill) {
         send(skill: Optional(skill))
     }
@@ -325,49 +328,28 @@ final class ChatController {
         guard !isBusy else { return }
         sendStartedAt = monotonicSeconds()
         let text = composerText.trimmingCharacters(in: .whitespacesAndNewlines)
-        let wantsLive = attachLiveSnapshot && (skill?.attachesScreenshot ?? true) && (studio?.canCapture ?? false)
-        guard !text.isEmpty || !composerAttachments.isEmpty || wantsLive || skill != nil else { return }
-        let attachments = composerAttachments.map(\.attachment)
+        let includesPictures = useSelectedPictures && (skill?.attachesScreenshot ?? true)
+        let attachments = includesPictures ? composerAttachments.map(\.attachment) : []
+        guard !text.isEmpty || !attachments.isEmpty || skill != nil else { return }
         composerText = ""
-        composerAttachments.removeAll()
+        if includesPictures { composerAttachments.removeAll() }
         banner = nil
 
         // A question asked out loud a moment ago may still be being transcribed.
         let transcription = (skill?.attachesTranscript ?? true) ? self.transcription : nil
         let waitsForWords = transcription.map { $0.isEnabled && $0.isReceivingAudio() } ?? false
-        guard wantsLive, let studio else {
-            guard waitsForWords, let transcription else {
-                submit(text: text, attachments: attachments, trigger: nil, sourceNote: nil, skill: skill)
-                return
-            }
-            isCapturingForSend = true
-            isWaitingForWords = true
-            Task {
-                await transcription.waitForLatestWords()
-                markTiming("transcript caught up")
-                isWaitingForWords = false
-                isCapturingForSend = false
-                submit(text: text, attachments: attachments, trigger: nil, sourceNote: nil, skill: skill)
-            }
+        guard waitsForWords, let transcription else {
+            submit(text: text, attachments: attachments, trigger: nil, sourceNote: nil, skill: skill)
             return
         }
         isCapturingForSend = true
+        isWaitingForWords = true
         Task {
-            defer { isCapturingForSend = false }
-            do {
-                let snapshot = try await studio.requestSnapshot(trigger: .composer)
-                markTiming("screenshot")
-                let attachment = makeAttachment(from: snapshot, sourceName: studio.sourceName)
-                snapshots.put(snapshot.data, id: attachment.id)
-                if waitsForWords {
-                    await transcription?.waitForLatestWords(timeout: 0.5)
-                    markTiming("transcript caught up")
-                }
-                submit(text: text, attachments: attachments + [attachment], trigger: .composer, sourceNote: nil, skill: skill)
-            } catch {
-                banner = "Sent without a new screenshot: \(error.localizedDescription)"
-                submit(text: text, attachments: attachments, trigger: nil, sourceNote: nil, skill: skill)
-            }
+            await transcription.waitForLatestWords()
+            markTiming("transcript caught up")
+            isWaitingForWords = false
+            isCapturingForSend = false
+            submit(text: text, attachments: attachments, trigger: nil, sourceNote: nil, skill: skill)
         }
     }
 

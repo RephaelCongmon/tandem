@@ -77,7 +77,6 @@ final class ChatControllerTests: XCTestCase {
             snapshots: SnapshotStore(directory: nil, keepOnDisk: false),
             clientFactory: { _ in client }
         )
-        chat.attachLiveSnapshot = false
         return chat
     }
 
@@ -189,6 +188,86 @@ final class ChatControllerTests: XCTestCase {
         XCTAssertEqual(chat.composerAttachments.count, 1)
         XCTAssertNotNil(chat.banner)
         await waitUntilIdle(chat)
+    }
+
+    private func picture(width: Int = 64) throws -> ReceivedSnapshot {
+        let context = try XCTUnwrap(CGContext(data: nil, width: width, height: 40, bitsPerComponent: 8, bytesPerRow: 0,
+                                             space: ImageCodec.srgb, bitmapInfo: CGImageAlphaInfo.premultipliedFirst.rawValue))
+        let jpeg = try XCTUnwrap(ImageCodec.jpeg(try XCTUnwrap(context.makeImage()), quality: 0.9))
+        return ReceivedSnapshot(header: SnapshotHeader(id: UUID(), trigger: .manual, note: nil, pixelWidth: jpeg.width,
+                                                       pixelHeight: jpeg.height, byteCount: jpeg.data.count, chunkCount: 1,
+                                                       mimeType: "image/jpeg", capturedAt: Date(), captureTitle: "Region"),
+                                data: jpeg.data, transferSeconds: 0)
+    }
+
+    func testSkillSendsOnlyTheMultipleSelectedPictures() async throws {
+        let client = ScriptedClient(.reply(greeting))
+        let chat = makeChat(client)
+        let first = try picture(width: 64), second = try picture(width: 80)
+        chat.addToComposer(first, sourceName: "Source")
+        chat.addToComposer(second, sourceName: "Source")
+        chat.send(skill: PromptSkill.defaults[0])
+        await waitUntilIdle(chat)
+        XCTAssertEqual(chat.selectedThread?.messages.first?.attachments.map(\.id), [first.header.id, second.header.id])
+        let images = client.requests.first?.turns.first?.parts.compactMap { part -> AIImage? in
+            if case .image(let image) = part { return image }; return nil
+        }
+        XCTAssertEqual(images?.map(\.width), [64, 80])
+        XCTAssertTrue(chat.composerAttachments.isEmpty)
+    }
+
+    func testExcludedPicturesStayForLaterAndAreNotSent() async throws {
+        let client = ScriptedClient(.reply(greeting))
+        let chat = makeChat(client)
+        let snapshot = try picture()
+        chat.addToComposer(snapshot, sourceName: "Source")
+        chat.useSelectedPictures = false
+        chat.send(skill: PromptSkill.defaults[0])
+        await waitUntilIdle(chat)
+        XCTAssertEqual(chat.selectedThread?.messages.first?.attachments.count, 0)
+        XCTAssertFalse(client.requests.first?.turns.first?.parts.contains { if case .image = $0 { return true }; return false } ?? true)
+        XCTAssertEqual(chat.composerAttachments.map(\.id), [snapshot.header.id])
+        chat.useSelectedPictures = true
+        chat.newThread()
+        chat.sendFromComposer()
+        await waitUntilIdle(chat)
+        XCTAssertEqual(chat.selectedThread?.messages.first?.attachments.map(\.id), [snapshot.header.id])
+    }
+
+    func testRemovingPictureFreesItsPixelsAndCannotSendIt() async throws {
+        let client = ScriptedClient(.reply(greeting))
+        let chat = makeChat(client)
+        let snapshot = try picture()
+        chat.addToComposer(snapshot, sourceName: "Source")
+        chat.removeFromComposer(snapshot.header.id)
+        XCTAssertNil(chat.snapshots.aiImage(for: snapshot.header.id, maxDimension: 100))
+        chat.send(skill: PromptSkill.defaults[0])
+        await waitUntilIdle(chat)
+        XCTAssertEqual(chat.selectedThread?.messages.first?.attachments.count, 0)
+    }
+
+    func testSkillWithoutPicturePermissionKeepsSelectionAndSendsText() async throws {
+        let client = ScriptedClient(.reply(greeting))
+        let chat = makeChat(client)
+        let snapshot = try picture()
+        chat.addToComposer(snapshot, sourceName: "Source")
+        var skill = PromptSkill.defaults[0]
+        skill.attachesScreenshot = false
+        chat.composerText = "Extra context"
+        chat.send(skill: skill)
+        await waitUntilIdle(chat)
+        XCTAssertEqual(chat.selectedThread?.messages.first?.text, "Extra context")
+        XCTAssertEqual(chat.selectedThread?.messages.first?.attachments.count, 0)
+        XCTAssertEqual(chat.composerAttachments.map(\.id), [snapshot.header.id])
+    }
+
+    func testEmptyComposerDoesNotSendOrCapture() {
+        let client = ScriptedClient(.reply(greeting))
+        let chat = makeChat(client)
+        chat.sendFromComposer()
+        XCTAssertNil(chat.selectedThread)
+        XCTAssertFalse(chat.canSendFromComposer)
+        XCTAssertFalse(chat.isCapturingForSend)
     }
 
     func testThreadManagement() async {

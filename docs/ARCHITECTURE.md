@@ -29,6 +29,10 @@
 | `Core/Sources/TandemUI` | Design system, `MarkdownView`, snapshot markup editor + renderer, global hotkeys + recorder |
 | `App/Sources` | SwiftUI app: `AppModel`, `ConnectionManager`, `SourceEngine`, `StudioEngine`, `ChatController`, views, settings, menu bar, panels |
 
+## Deliberate picture selection
+
+Questions and skills consume only selected composer pictures. Excluding pictures keeps them for later. The capture picker requests a small preview while the Source retains the native frame. After a drag and Add, a normalized region plus frozen-frame token requests a crop of the same pixels, at native resolution before provider scaling. Previews never enter the composer or AI context. Cancel, completion, disconnect, pause, interruption, source changes and expiry release retained frames. Legacy automatic-on-send preferences are ignored; explicit interval automation and Source pushes remain available.
+
 ## Threading model
 
 - **PeerLink** state is confined to its transport's serial queue. The main-actor `PeerConnection` wraps it; `LinkRouter` (also on the link queue) reassembles snapshots and routes messages:

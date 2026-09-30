@@ -2,6 +2,29 @@ import XCTest
 @testable import TandemCore
 
 final class WireTests: XCTestCase {
+    func testRegionRequestPreservesTheFrozenFrameAndRegion() throws {
+        let token = UUID().uuidString
+        let json = """
+        {"id":"\(UUID().uuidString)","trigger":"manual","maxDimension":2576,"quality":0.9,
+         "frozenSnapshotID":"\(token)","region":{"x":0.25,"y":0.125,"width":0.5,"height":0.25}}
+        """
+        let request = try JSONDecoder().decode(SnapshotRequest.self, from: Data(json.utf8))
+        let encoded = try JSONEncoder().encode(request)
+        let fields = try XCTUnwrap(JSONSerialization.jsonObject(with: encoded) as? [String: Any])
+        XCTAssertEqual(fields["frozenSnapshotID"] as? String, token)
+        let region = try XCTUnwrap(fields["region"] as? [String: Double])
+        XCTAssertEqual(region, ["x": 0.25, "y": 0.125, "width": 0.5, "height": 0.25])
+    }
+
+    func testPreviewRequestPreservesItsIntent() throws {
+        let json = """
+        {"id":"\(UUID().uuidString)","trigger":"manual","maxDimension":1600,"quality":0.8,"prepareRegionSelection":true}
+        """
+        let request = try JSONDecoder().decode(SnapshotRequest.self, from: Data(json.utf8))
+        let fields = try XCTUnwrap(JSONSerialization.jsonObject(with: JSONEncoder().encode(request)) as? [String: Any])
+        XCTAssertEqual(fields["prepareRegionSelection"] as? Bool, true)
+    }
+
     func testFrameDecoderHandlesArbitrarySplits() throws {
         let payloads = (0..<50).map { i in Data((0..<(i * 37 % 5000)).map { UInt8(truncatingIfNeeded: $0 &* 7 &+ i) }) }
         var stream = Data()
@@ -42,6 +65,7 @@ final class WireTests: XCTestCase {
             .snapshotRequest(SnapshotRequest(trigger: .hotkey, maxDimension: 2576, quality: 0.9, skipIfUnchangedBelow: 0.02)),
             .snapshotHeader(SnapshotHeader(id: UUID(), trigger: .sourcePush, note: "why is this failing?", pixelWidth: 100, pixelHeight: 50, byteCount: 1234, chunkCount: 1, mimeType: "image/jpeg", capturedAt: Date(timeIntervalSince1970: 1_700_000_000), captureTitle: "Xcode")),
             .snapshotUnchanged(id: UUID()),
+            .discardRegionSelection(id: UUID()),
             .snapshotFailed(id: UUID(), reason: "paused"),
             .sourceCatalogRequest,
             .sourceCatalog([]),

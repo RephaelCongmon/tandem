@@ -43,6 +43,15 @@ final class StudioEngine {
     private(set) var liveStats = LiveStats()
     private(set) var hasVideo = false
     private(set) var isCapturing = false
+    struct RegionSelection: Identifiable {
+        let id: UUID
+        let preview: ReceivedSnapshot
+        let connectionID: UUID
+        let sourceName: String?
+    }
+    var regionSelection: RegionSelection?
+    private(set) var regionSelectionError: String?
+    @ObservationIgnored private var selectionGeneration = UUID()
     /// Snapshots pushed from the Source that are waiting in the composer.
     private(set) var lastPushAt: Date?
     var livePreviewEnabled = true { didSet { sendStreamRequest() } }
@@ -156,6 +165,7 @@ final class StudioEngine {
 
     func detach(_ connection: PeerConnection) {
         guard self.connection?.id == connection.id else { return }
+        cancelRegionSelection()
         sharedMacUpdater.sourceDisconnected(connection)
         connection.videoSink.value = nil
         connection.audioSink.value = nil
@@ -309,17 +319,25 @@ final class StudioEngine {
 
     /// Asks the Source for a fresh still. Throws `SnapshotRequestError.unchanged`
     /// when `skipIfUnchangedBelow` is set and the screen didn't change.
-    func requestSnapshot(trigger: SnapshotTrigger, skipIfUnchangedBelow: Double? = nil) async throws -> ReceivedSnapshot {
+    func requestSnapshot(trigger: SnapshotTrigger, skipIfUnchangedBelow: Double? = nil, prepareRegionSelection: Bool = false, region: SnapshotRegion? = nil, frozenSnapshotID: UUID? = nil) async throws -> ReceivedSnapshot {
         guard let connection, connection.isConnected else { throw SnapshotRequestError.notConnected }
+        if prepareRegionSelection || region != nil {
+            guard connection.peerSupportsRegionSnapshots else {
+                throw SnapshotRequestError.failed("Update Tandem on the shared Mac to select regions.")
+            }
+        }
         if let status = sourceStatus, status.state != .live, status.state != .starting {
             throw SnapshotRequestError.sourceUnavailable(status.message ?? "The other Mac isn't sharing right now.")
         }
         let capabilities = ModelCatalog.capabilities(for: settings.currentModel, provider: settings.provider)
         let request = SnapshotRequest(
             trigger: trigger,
-            maxDimension: min(capabilities.maxImageLongEdge, 2576),
-            quality: 0.9,
-            skipIfUnchangedBelow: skipIfUnchangedBelow
+            maxDimension: prepareRegionSelection ? 1600 : min(capabilities.maxImageLongEdge, 2576),
+            quality: prepareRegionSelection ? 0.8 : 0.9,
+            skipIfUnchangedBelow: skipIfUnchangedBelow,
+            prepareRegionSelection: prepareRegionSelection ? true : nil,
+            region: region,
+            frozenSnapshotID: frozenSnapshotID
         )
         // Idle timeout: extended whenever chunks arrive (see onSnapshotProgress).
         let timeout: Double = connection.linkKind.isConstrained ? 30 : 12
@@ -350,30 +368,61 @@ final class StudioEngine {
         entry.continuation.resume(with: result)
     }
 
-    /// Hotkey / button: capture now and ask using the composer text (or the default prompt).
+    /// Ask using deliberately selected pictures and the text already in the composer.
     func captureAndAsk() {
-        guard !chat.isBusy else { return }
+        chat.sendFromComposer()
+    }
+
+    /// Freeze a preview; nothing is attached until the user draws and adds a region.
+    func captureToComposer() {
+        guard canCapture, !isCapturing else { return }
+        let generation = UUID()
+        selectionGeneration = generation
+        let sessionID = regionSelection?.id ?? UUID()
+        regionSelectionError = nil
+        let connectionID = connection?.id
+        let name = sourceName
         Task {
             do {
-                let snapshot = try await requestSnapshot(trigger: .hotkey)
-                let typed = chat.composerText.trimmingCharacters(in: .whitespacesAndNewlines)
-                let prompt = typed.isEmpty ? settings.pushPrompt : typed
-                if !typed.isEmpty { chat.composerText = "" }
-                chat.ask(prompt: prompt, snapshot: snapshot, sourceName: sourceName, trigger: .hotkey)
+                let preview = try await requestSnapshot(trigger: .manual, prepareRegionSelection: true)
+                guard selectionGeneration == generation, let connectionID, connection?.id == connectionID else {
+                    if connection?.id == connectionID { connection?.send(.control(.discardRegionSelection(id: preview.header.id))) }
+                    return
+                }
+                regionSelection = RegionSelection(id: sessionID, preview: preview, connectionID: connectionID, sourceName: name)
             } catch {
-                chat.reportBanner("Couldn't capture: \(error.localizedDescription)")
+                guard selectionGeneration == generation else { return }
+                regionSelectionError = error.localizedDescription
+                if regionSelection == nil {
+                    chat.reportBanner("Couldn't capture: \(error.localizedDescription)")
+                }
             }
         }
     }
 
-    /// Captures into the composer for the user to annotate and send.
-    func captureToComposer() {
+    func cancelRegionSelection() {
+        if let selection = regionSelection, connection?.id == selection.connectionID {
+            connection?.send(.control(.discardRegionSelection(id: selection.preview.header.id)))
+        }
+        selectionGeneration = UUID()
+        regionSelection = nil
+        regionSelectionError = nil
+    }
+
+    func addSelectedRegion(_ region: SnapshotRegion) {
+        guard let selection = regionSelection, !isCapturing else { return }
+        let generation = selectionGeneration
+        regionSelectionError = nil
         Task {
             do {
-                let snapshot = try await requestSnapshot(trigger: .manual)
-                chat.addToComposer(snapshot, sourceName: sourceName)
+                guard connection?.id == selection.connectionID else { throw SnapshotRequestError.notConnected }
+                let snapshot = try await requestSnapshot(trigger: .manual, region: region, frozenSnapshotID: selection.preview.header.id)
+                guard selectionGeneration == generation, connection?.id == selection.connectionID else { return }
+                chat.addToComposer(snapshot, sourceName: selection.sourceName)
+                cancelRegionSelection()
             } catch {
-                chat.reportBanner("Couldn't capture: \(error.localizedDescription)")
+                guard selectionGeneration == generation else { return }
+                regionSelectionError = error.localizedDescription
             }
         }
     }

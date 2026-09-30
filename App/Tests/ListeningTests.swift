@@ -72,7 +72,6 @@ final class TranscriptAttachmentTests: XCTestCase {
             snapshots: SnapshotStore(directory: nil, keepOnDisk: false),
             clientFactory: { _ in client }
         )
-        chat.attachLiveSnapshot = false
         let transcription = TranscriptionService(settings: settings)
         chat.transcription = transcription
         return (chat, transcription, settings, client)

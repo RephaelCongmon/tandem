@@ -173,18 +173,18 @@ private struct StudioMenuSection: View {
                 Button {
                     studio.captureAndAsk()
                 } label: {
-                    Label("Capture & Ask", systemImage: "sparkles").frame(maxWidth: .infinity)
+                    Label("Ask", systemImage: "sparkles").frame(maxWidth: .infinity)
                 }
                 .buttonStyle(TandemButtonStyle(.primary, size: .small))
-                .disabled(!studio.canCapture || model.chat.isBusy)
+                .disabled(!model.chat.canSendFromComposer)
                 Button {
                     studio.captureToComposer()
                     model.showMainWindow()
                 } label: {
-                    Label("To Composer", systemImage: "camera.viewfinder").frame(maxWidth: .infinity)
+                    Label("Select region", systemImage: "rectangle.dashed").frame(maxWidth: .infinity)
                 }
                 .buttonStyle(TandemButtonStyle(.secondary, size: .small))
-                .disabled(!studio.canCapture)
+                .disabled(!studio.canCapture || studio.isCapturing)
             }
             Toggle(isOn: Binding(get: { model.settings.autoCaptureEnabled }, set: { _ in studio.toggleAutoCapture() })) {
                 VStack(alignment: .leading, spacing: 1) {

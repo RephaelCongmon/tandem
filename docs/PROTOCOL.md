@@ -71,7 +71,7 @@ Audio is mono 16 kHz. Opus frames are 20 ms (32 kbps), and a packet carries five
 - `streamRequest`
 - `keyframeRequest`
 - `videoAck`
-- `snapshotRequest`, `snapshotHeader`, `snapshotUnchanged`, `snapshotFailed`
+- `snapshotRequest`, `snapshotHeader`, `snapshotUnchanged`, `snapshotFailed`, `discardRegionSelection {id}`
 - `sourceCatalogRequest`, `sourceCatalog`, `selectSource`
 - `automationStatus`
 - `replyMirror`
@@ -82,6 +82,22 @@ Audio is mono 16 kHz. Opus frames are 20 ms (32 kbps), and a packet carries five
 - `goodbye`
 
 Unknown messages are ignored, so newer peers can add them. `hello.capabilities` advertises optional features: `"audio"` means the peer can send (Source) or transcribe (Studio) computer audio; `"update"` means a Source installs updates its Studio sends (after checking the version and the developer signature). A Studio uses it to tell the user that an older Source needs an update.
+
+### Frozen region snapshots
+
+The `regionSnapshots` capability enables deliberate region capture. The Studio first sends
+`snapshotRequest {prepareRegionSelection: true, maxDimension: 1600, ...}`. The Source captures
+a native frame and keeps one frame per viewer in memory for up to five minutes. Its response
+is a small selection preview, with the request ID as its token. This preview is never an AI attachment.
+
+After the user draws a rectangle, the Studio sends another `snapshotRequest` with
+`frozenSnapshotID` and `region {x, y, width, height}` in normalized top-left image coordinates.
+The Source crops the retained frame before scaling and JPEG encoding, and transfers only
+that region at full quality. The response keeps the original capture time. Invalid geometry,
+missing or expired tokens, source changes, and paused or locked sharing fail explicitly;
+they never fall back to a full-screen or newer capture. Cancellation sends
+`discardRegionSelection`, and a successful crop or disconnect also frees the frame.
+Older peers are asked to update before region selection is attempted.
 
 ### Scheduling
 

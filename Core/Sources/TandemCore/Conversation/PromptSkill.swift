@@ -1,7 +1,7 @@
 import Foundation
 
-/// A one-click instruction set for a kind of question (e.g. "Debug"), sent with a fresh
-/// screenshot, the latest audio transcript and anything the user typed. The thread shows the
+/// A one-click instruction set for a kind of question (e.g. "Debug"), sent with selected
+/// pictures, the latest audio transcript and anything the user typed. The thread shows the
 /// skill's name; the model gets its full instructions.
 public struct PromptSkill: Codable, Sendable, Hashable, Identifiable {
     public var id: UUID
@@ -9,7 +9,7 @@ public struct PromptSkill: Codable, Sendable, Hashable, Identifiable {
     /// SF Symbol name.
     public var symbol: String
     public var instructions: String
-    /// Attach a fresh screenshot of the shared screen (when Live screen is on).
+    /// Include selected composer pictures when the user has enabled them for this question.
     public var attachesScreenshot: Bool
     /// Attach what was said on the shared Mac's audio since the last message (when listening).
     public var attachesTranscript: Bool
