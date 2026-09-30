@@ -169,6 +169,13 @@ Speech recognition uses [Parakeet TDT 0.6B v2](https://huggingface.co/nvidia/par
 Newest first. Each version is also published, with its download, on the repository's [Releases](https://github.com/RephaelCongmon/tandem/releases) page, and **Update Now** in the app installs it.
 
 <!-- update-log:start -->
+### 1.5.0 — September 30, 2026
+
+- **Codex on your ChatGPT subscription:** pick **Codex — your ChatGPT subscription** in Settings › AI to ask GPT-6.1 Sol, GPT-6 Astra and the other models your plan offers. It works through the Codex app on this Mac, with no API key, just like Claude Code.
+- It works the same as Claude: screenshots, the live transcript, skills, reasoning levels, and follow-ups that remember the conversation.
+- **Safety:** Codex runs with no tools, plugins, MCP servers or web search. Conversations are private and aren't saved to Codex's history.
+- Settings shows whether Codex is signed in with ChatGPT, and lists your account's models.
+
 ### 1.4.2 — September 30, 2026
 
 - **Updates without signing in:** Tandem's releases are now public, so any Mac checks for and installs updates on its own. No GitHub CLI or token needed.
