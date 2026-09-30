@@ -156,7 +156,8 @@ enum ReleaseDecoding {
 
 // MARK: - GitHub REST API (token)
 
-/// Reads releases of a private repository with a GitHub token.
+/// Reads releases through the GitHub REST API: with a token (private repositories, higher rate
+/// limits), or anonymously when the token is empty (public repositories).
 public struct GitHubAPIFeed: UpdateFeed {
     public let repository: String
     let token: String
@@ -172,7 +173,7 @@ public struct GitHubAPIFeed: UpdateFeed {
 
     func request(_ url: URL, accept: String) -> URLRequest {
         var request = URLRequest(url: url, cachePolicy: .reloadIgnoringLocalCacheData, timeoutInterval: 60)
-        request.setValue("Bearer \(token)", forHTTPHeaderField: "Authorization")
+        if !token.isEmpty { request.setValue("Bearer \(token)", forHTTPHeaderField: "Authorization") }
         request.setValue(accept, forHTTPHeaderField: "Accept")
         request.setValue("2022-11-28", forHTTPHeaderField: "X-GitHub-Api-Version")
         request.setValue(userAgent, forHTTPHeaderField: "User-Agent")
@@ -243,7 +244,7 @@ public struct GitHubAPIFeed: UpdateFeed {
         switch http.statusCode {
         case 200..<300: return
         case 401: throw UpdateError.accessDenied("GitHub rejected the access token. Paste a new one in Settings › General › Updates.")
-        case 403: throw UpdateError.accessDenied("The access token isn't allowed to read \(repository), or GitHub's rate limit was reached.")
+        case 403, 429: throw UpdateError.accessDenied("GitHub's rate limit was reached, or the access token isn't allowed to read \(repository). Try again later.")
         case 404: throw UpdateError.noRelease("No release found in \(repository), or the access token can't read it.")
         default: throw UpdateError.network("GitHub answered with HTTP \(http.statusCode).")
         }

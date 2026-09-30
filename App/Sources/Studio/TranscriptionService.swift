@@ -33,6 +33,8 @@ final class TranscriptionService {
     private(set) var level: Double = 0
     /// When the last audio packet arrived (this Mac's clock).
     private(set) var lastAudioAt: Date?
+    /// The speaker paused and the transcript includes everything said up to now.
+    private(set) var isCaughtUp = true
     private(set) var engineName: String?
 
     var isEnabled: Bool { settings.listen }
@@ -60,12 +62,13 @@ final class TranscriptionService {
         self.settings = settings
         modelStore = ParakeetModelStore(modelsDirectory: modelsDirectory, mirror: modelMirror)
         modelState = modelStore.isInstalled ? .installed : .notInstalled
-        pipeline.onLevel = { [weak self] level in
+        pipeline.onLevel = { [weak self] level, caughtUp in
             onMain {
                 guard let self else { return }
                 self.level = level
                 self.lastAudioAt = Date()
                 self.flushedForGap = false
+                if self.isCaughtUp != caughtUp { self.isCaughtUp = caughtUp }
             }
         }
         pipeline.onEvent = { [weak self] event, start, end in
@@ -291,7 +294,9 @@ final class TranscriptionService {
 /// recognizer's audio time back to wall-clock time. Confined to `queue`.
 final class AudioPipeline: @unchecked Sendable {
     let queue = DispatchQueue(label: "tandem.audio.transcribe", qos: .userInitiated)
-    var onLevel: ((Double) -> Void)?
+    /// About 10 times a second: the meter level, and whether speech has paused with the
+    /// recognizer caught up (for the "Captured" badge).
+    var onLevel: ((Double, Bool) -> Void)?
     var onEvent: ((TranscriberEvent, Date, Date) -> Void)?
 
     private var decoders: [LiveAudioCodec: AudioFrameDecoder] = [:]
@@ -352,7 +357,8 @@ final class AudioPipeline: @unchecked Sendable {
         peakSinceLevelPost = max(peakSinceLevelPost, decibels)
         let now = monotonicSeconds()
         if now - lastLevelPost > 0.1 {
-            onLevel?(AudioLevel.meterValue(decibels: peakSinceLevelPost))
+            let paused = timeline.lastSoundAt.map { timeline.fedSeconds - $0 >= 0.5 } ?? true
+            onLevel?(AudioLevel.meterValue(decibels: peakSinceLevelPost), caughtUp.value && paused)
             lastLevelPost = now
             peakSinceLevelPost = -120
         }

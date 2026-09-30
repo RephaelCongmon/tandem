@@ -142,17 +142,23 @@ final class ParakeetTranscriber: LiveSpeechTranscriber, @unchecked Sendable {
         let log = self.log
         let worker = Task {
             var segmenter = UtteranceSegmenter()
+            // Set after an utterance was cut mid-speech: the next one may repeat its last words.
+            var continuing: String?
             func run(_ actions: [UtteranceSegmenter.Action]) async {
                 for action in actions {
                     switch action {
                     case .live(let samples, let start, let end):
-                        if let text = await Self.transcribe(samples, with: manager, log: log) {
+                        if var text = await Self.transcribe(samples, with: manager, log: log) {
+                            if let continuing { text = UtteranceSegmenter.removingOverlap(text, after: continuing) }
                             onEvent(.volatile(text: text, start: start, end: end))
                         }
-                    case .final(let samples, let start, let end):
-                        let text = await Self.transcribe(samples, with: manager, log: log) ?? ""
+                    case .final(let samples, let start, let end, let isCut):
+                        var text = await Self.transcribe(samples, with: manager, log: log) ?? ""
+                        if let previous = continuing { text = UtteranceSegmenter.removingOverlap(text, after: previous) }
+                        continuing = isCut ? text : nil
                         onEvent(.final(text: text, start: start, end: end))
                     case .discard:
+                        continuing = nil
                         onEvent(.volatile(text: "", start: segmenter.time, end: segmenter.time))
                     }
                 }

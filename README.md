@@ -51,7 +51,7 @@ It's built for moments like: your work laptop can't run AI tools but your person
 
 ### Listening to the shared Mac's audio
 
-Turn on **Listen** in the composer (next to **Live screen**), or press ⌥⌘L. The shared Mac starts sending what it plays: the other people on a call, a video, anything but Tandem's own sounds and its microphone. The Studio transcribes it on-device. A two-line live caption above the skill buttons shows the words about a second after they're spoken. The ❝ button next to it opens the whole transcript, with timestamps, **Copy** and **Clear**.
+Turn on **Listen** in the composer (next to **Live screen**), or press ⌥⌘L. The shared Mac starts sending what it plays: the other people on a call, a video, anything but Tandem's own sounds and its microphone. The Studio transcribes it on-device. A two-line live caption above the skill buttons shows the words about a second after they're spoken. Next to it, **✓ Captured** means the speaker paused and everything said so far is in the transcript, so it will go with your next question. **Transcribing…** means the last words are still being recognized; pressing Follow-up then waits a moment for them. The ❝ button next to it opens the whole transcript, with timestamps, **Copy** and **Clear**.
 
 When someone asks you something out loud, press **Follow-up** (⌘3 in Tandem, or ⌃⌥F from any app). It sends the transcript, a fresh screenshot and the conversation so far. The answer starts with the question as Claude understood it, in italics with obvious speech-to-text mistakes fixed, followed by a direct answer in a few sentences. If you press it while the last words are still being recognized, Tandem waits a moment (up to 0.8 s) for them.
 
@@ -76,7 +76,7 @@ When a new version is published, an **Update** button appears in the window's to
 
 **The shared Mac updates itself from the asking Mac.** When the shared Mac connects with an older version, the asking Mac sends it its own copy of Tandem over the encrypted link. The shared Mac installs it only if it's the same app, a newer version, and signed by the same developer; then it restarts and reconnects, all in about 3 seconds. So **Update Now on the asking Mac updates both Macs**, and the shared Mac never needs GitHub access or an AirDropped disk image. (A shared Mac on 1.3 or earlier needs one last manual update to 1.4.) Turn it off with Settings › General › *Keep the shared Mac up to date* (asking Mac) or *Install updates sent by the other Mac* (shared Mac); over Bluetooth it's only done when you click **Update It Now**.
 
-Releases live in the private GitHub repository, so the asking Mac needs read access to it. It's automatic when the [GitHub CLI](https://cli.github.com) is signed in on that Mac (`brew install gh && gh auth login`). Otherwise, paste a fine-grained access token with read-only **Contents** access to the repository in Settings › General › Updates.
+Releases are public at [github.com/RephaelCongmon/tandem/releases](https://github.com/RephaelCongmon/tandem/releases), so any Mac can check for and install updates with no sign-in. If the [GitHub CLI](https://cli.github.com) is signed in, or an access token is saved in Settings › General › Updates, Tandem uses that instead. That's only needed for a private fork, or to raise GitHub's rate limit (60 requests an hour per network without sign-in, far more than the six-hourly checks use).
 
 ### Global shortcuts (defaults — change them in Settings › Shortcuts)
 

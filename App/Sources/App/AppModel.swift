@@ -140,7 +140,7 @@ final class AppModel {
                 showMainWindow()
                 updates.isPanelPresented = true
             } else if updates.access == .none {
-                toasts.show("Add GitHub access in Settings › General to check for updates", systemImage: "key.fill", style: .warning)
+                toasts.show("Tandem can't reach its releases on GitHub", systemImage: "wifi.exclamationmark", style: .warning)
                 openSettingsAction?()
             } else if let error = updates.checkError {
                 toasts.show(error, systemImage: "exclamationmark.triangle.fill", style: .warning)

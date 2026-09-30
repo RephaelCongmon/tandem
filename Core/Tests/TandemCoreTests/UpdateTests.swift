@@ -83,6 +83,14 @@ final class ReleaseFeedTests: XCTestCase {
         XCTAssertEqual(GitHubAPIFeed.redirected(sameHost, from: original).value(forHTTPHeaderField: "Authorization"), "Bearer secret")
     }
 
+    func testAPublicRepositoryIsReadWithoutAToken() {
+        let feed = GitHubAPIFeed(repository: "o/r", token: "")
+        let request = feed.request(URL(string: "https://api.github.com/repos/o/r/releases/latest")!, accept: "application/vnd.github+json")
+        XCTAssertNil(request.value(forHTTPHeaderField: "Authorization"))
+        XCTAssertEqual(request.value(forHTTPHeaderField: "Accept"), "application/vnd.github+json")
+        XCTAssertNotNil(request.value(forHTTPHeaderField: "User-Agent"))
+    }
+
     func testHTTPErrorsExplainTheFix() {
         func error(_ status: Int) -> UpdateError? {
             let response = HTTPURLResponse(url: URL(string: "https://api.github.com")!, statusCode: status, httpVersion: nil, headerFields: nil)!
@@ -191,5 +199,21 @@ final class UpdateInstallerTests: XCTestCase {
         let team = try XCTUnwrap(CodeSignature.teamIdentifier(ofAppAt: built))
         XCTAssertNoThrow(try CodeSignature.verify(appAt: built, bundleIdentifier: "com.rofel.tandem", teamIdentifier: team))
         XCTAssertThrowsError(try CodeSignature.verify(appAt: built, bundleIdentifier: "com.rofel.tandem", teamIdentifier: "ZZZZZZZZZZ"))
+    }
+}
+
+/// Reads the real, public release feed without signing in (network; `TANDEM_LIVE_GITHUB=1`).
+final class PublicReleaseFeedLiveTests: XCTestCase {
+    func testTheLatestReleaseAndItsAppDownloadNeedNoSignIn() async throws {
+        try XCTSkipUnless(ProcessInfo.processInfo.environment["TANDEM_LIVE_GITHUB"] == "1", "uses the network")
+        let feed = GitHubAPIFeed(repository: "RephaelCongmon/tandem", token: "")
+        let release = try await feed.latestRelease()
+        let archive = try XCTUnwrap(release.appArchive)
+        let folder = FileManager.default.temporaryDirectory.appendingPathComponent("tandem-public-\(UUID().uuidString)")
+        try FileManager.default.createDirectory(at: folder, withIntermediateDirectories: true)
+        defer { try? FileManager.default.removeItem(at: folder) }
+        let file = try await feed.download(archive, of: release, to: folder)
+        let size = try XCTUnwrap(FileManager.default.attributesOfItem(atPath: file.path)[.size] as? Int)
+        XCTAssertEqual(size, archive.size)
     }
 }

@@ -20,13 +20,16 @@ struct UtteranceSegmenter {
         var minimumSpeech: Double = 0.25
         /// Trailing silence kept when finishing.
         var trailingSilence: Double = 0.2
+        /// How far back from the limit a long utterance looks for a pause to be cut at.
+        var cutSearch: Double = 6
     }
 
     enum Action: Equatable {
         /// Transcribe `samples` (starting at audio time `start`) as the live, unfinished text.
         case live(samples: [Float], start: Double, end: Double)
-        /// Transcribe `samples` as a finished segment.
-        case final(samples: [Float], start: Double, end: Double)
+        /// Transcribe `samples` as a finished segment. `isCut` means speech continued past it
+        /// (the utterance hit the length limit), so the next one starts mid-flow.
+        case final(samples: [Float], start: Double, end: Double, isCut: Bool)
         /// The utterance turned out to be noise; clear any live text.
         case discard
     }
@@ -111,14 +114,15 @@ struct UtteranceSegmenter {
             return [finish(upTo: max(keep, 0), start: start)]
         }
         if length >= configuration.maxUtterance {
-            // Cut at the quietest moment of the last 2.5 s so a word isn't split in half.
-            let window = Int(2.5 / frameSeconds)
+            // Cut at the quietest moment of the last few seconds (ideally a pause between
+            // sentences) so a word isn't split in half.
+            let window = Int(configuration.cutSearch / frameSeconds)
             let firstCandidate = max(frameLevels.count - window, 1)
             let quietest = (firstCandidate..<frameLevels.count).min { frameLevels[$0] < frameLevels[$1] } ?? frameLevels.count
             let cut = quietest * configuration.frameSamples
             let rest = Array(utterance[cut...])
             let restLevels = Array(frameLevels[quietest...])
-            let action = finish(upTo: cut, start: start)
+            let action = finish(upTo: cut, start: start, isCut: true)
             // What follows the cut starts the next utterance right away.
             utterance = rest
             frameLevels = restLevels
@@ -135,7 +139,7 @@ struct UtteranceSegmenter {
         return []
     }
 
-    private mutating func finish(upTo count: Int, start: Double) -> Action {
+    private mutating func finish(upTo count: Int, start: Double, isCut: Bool = false) -> Action {
         let samples = Array(utterance.prefix(count))
         let hadSpeech = speechSeconds >= configuration.minimumSpeech
         // The frames after the cut become the pre-roll of whatever comes next.
@@ -148,7 +152,23 @@ struct UtteranceSegmenter {
         silenceRun = 0
         lastLiveLength = 0
         guard hadSpeech, !samples.isEmpty else { return .discard }
-        return .final(samples: samples, start: start, end: start + seconds(samples.count))
+        return .final(samples: samples, start: start, end: start + seconds(samples.count), isCut: isCut)
+    }
+
+    /// `text` without the words that repeat the end of `previous` (up to `maxWords`): when an
+    /// utterance is cut mid-phrase the model can finish the phrase on both sides of the cut.
+    static func removingOverlap(_ text: String, after previous: String, maxWords: Int = 6) -> String {
+        func normalized(_ word: Substring) -> String { word.lowercased().filter { $0.isLetter || $0.isNumber } }
+        let before = previous.split(separator: " ").map(normalized)
+        let words = text.split(separator: " ")
+        let after = words.map(normalized)
+        let limit = min(maxWords, before.count, after.count)
+        guard limit > 0 else { return text }
+        for count in stride(from: limit, through: 1, by: -1) where Array(before.suffix(count)) == Array(after.prefix(count)) {
+            guard !after.prefix(count).allSatisfy({ $0.isEmpty }) else { continue }
+            return words.dropFirst(count).joined(separator: " ")
+        }
+        return text
     }
 
     static func decibels(_ frame: [Float]) -> Double {

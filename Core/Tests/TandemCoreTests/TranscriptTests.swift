@@ -112,7 +112,7 @@ final class LiveTranscriptTests: XCTestCase {
     }
 
     func testNamesAndTermsGoWithTheTranscript() throws {
-        XCTAssertEqual(TranscriptExcerpt.terms(from: " Kubernetes, MTN Ghana\nRephael;  kubernetes ,, "), ["Kubernetes", "MTN Ghana", "Rephael"])
+        XCTAssertEqual(TranscriptExcerpt.terms(from: " Kubernetes, MTN Ghana\nPriya;  kubernetes ,, "), ["Kubernetes", "MTN Ghana", "Priya"])
         var transcript = LiveTranscript()
         transcript.commit("How do you scale cooper netties?", start: at(0), end: at(2))
         let excerpt = try XCTUnwrap(transcript.excerpt(after: nil, now: at(3), window: 300, terms: ["Kubernetes"]))

@@ -7,7 +7,8 @@ import TandemCore
 /// Finds new Tandem releases in the (private) GitHub repository and installs them in place:
 /// download, check the code signature, swap the app, relaunch.
 ///
-/// GitHub access comes from a saved access token, or else the GitHub CLI's own sign-in.
+/// The repository is public, so no sign-in is needed. A saved access token or the GitHub CLI's
+/// sign-in is used when present (a private fork, or higher rate limits).
 @MainActor
 @Observable
 final class UpdateController {
@@ -15,7 +16,9 @@ final class UpdateController {
         case unknown
         case token
         case githubCLI
-        /// Neither a token nor a signed-in GitHub CLI.
+        /// No sign-in: the public repository through the anonymous API.
+        case anonymous
+        /// No way to reach the releases (unused while the repository is public).
         case none
     }
 
@@ -125,7 +128,8 @@ final class UpdateController {
         access = .unknown
     }
 
-    /// A saved token wins (it was set on purpose); otherwise the GitHub CLI's sign-in.
+    /// A saved token wins (it was set on purpose); then the GitHub CLI's sign-in; otherwise the
+    /// public repository without signing in.
     private func makeFeed() async -> UpdateFeed? {
         if let data = tokens.read(account: "token"), let token = String(data: data, encoding: .utf8), !token.isEmpty {
             access = .token
@@ -138,8 +142,8 @@ final class UpdateController {
                 return feed
             }
         }
-        access = .none
-        return nil
+        access = .anonymous
+        return GitHubAPIFeed(repository: repository, token: "", userAgent: "Tandem/\(currentVersion)")
     }
 
     /// Downloads a file attached to one of the repository's releases (the speech model), with

@@ -51,6 +51,7 @@ struct LiveCaptionBar: View {
                 .frame(width: 18, height: 16)
             content
                 .frame(maxWidth: .infinity, alignment: .leading)
+            CaptureStateBadge()
             Button {
                 showsTranscript.toggle()
             } label: {
@@ -102,6 +103,28 @@ struct LiveCaptionBar: View {
                 .clipped()
                 .mask(LinearGradient(stops: [.init(color: .black.opacity(0.35), location: 0), .init(color: .black, location: 0.45)], startPoint: .top, endPoint: .bottom))
                 .help(recent.final + " " + recent.volatile)
+        }
+    }
+}
+
+/// Whether the last thing said is already in the transcript, so you know a question asked out
+/// loud will go with the next prompt.
+private struct CaptureStateBadge: View {
+    @Environment(AppModel.self) private var model
+
+    var body: some View {
+        let transcription = model.studio.transcription
+        if transcription.isReady, transcription.isReceivingAudio(), !transcription.transcript.isEmpty {
+            let captured = transcription.isCaughtUp
+            Label(captured ? "Captured" : "Transcribing…", systemImage: captured ? "checkmark.circle.fill" : "ellipsis.circle")
+                .font(TandemFont.micro)
+                .foregroundStyle(captured ? Theme.success : Theme.textSecondary)
+                .labelStyle(.titleAndIcon)
+                .fixedSize()
+                .animation(.easeOut(duration: 0.15), value: captured)
+                .help(captured
+                    ? "Everything said so far is in the transcript and goes with your next question."
+                    : "The last words are still being recognized. Asking now waits a moment for them.")
         }
     }
 }

@@ -123,7 +123,7 @@ struct UpdateSettingsSection: View {
                     .disabled(updates.isChecking || updates.isUpdating)
             }
             HStack {
-                SecureField("GitHub access token", text: $tokenDraft, prompt: Text(updates.hasToken ? "Saved in your Keychain" : "Optional if the GitHub CLI is signed in"))
+                SecureField("GitHub access token", text: $tokenDraft, prompt: Text(updates.hasToken ? "Saved in your Keychain" : "Optional"))
                 Button("Save") { saveToken() }
                     .disabled(tokenDraft.trimmingCharacters(in: .whitespaces).isEmpty)
                 if updates.hasToken {
@@ -174,7 +174,7 @@ struct UpdateSettingsSection: View {
         if let phase = updates.installPhase { return phase }
         if let error = updates.installError { return error }
         if let latest = updates.latest { return "Tandem \(latest.version) is available." }
-        if updates.access == .none { return "Tandem needs access to its private GitHub repository to check for updates." }
+        if updates.access == .none { return "Tandem can't reach its releases on GitHub." }
         if let error = updates.checkError { return error }
         if let checked = updates.lastChecked { return "Up to date · checked \(Formatters.relative(checked))" }
         return "Not checked yet."
@@ -188,8 +188,10 @@ struct UpdateSettingsSection: View {
             return "Using the saved access token to read releases from \(repository)."
         case .githubCLI:
             return "Using your GitHub CLI sign-in to read releases from \(repository)."
-        case .none, .unknown:
-            return "Releases live in the private repository \(repository). Sign in with the GitHub CLI (`gh auth login`), or paste a fine-grained token that can read that repository's contents."
+        case .anonymous, .unknown:
+            return "Releases are public at github.com/\(repository), so no sign-in is needed. A token is optional; it only raises GitHub's rate limit."
+        case .none:
+            return "Tandem can't reach its releases at github.com/\(repository). Check the connection, or paste an access token."
         }
     }
 

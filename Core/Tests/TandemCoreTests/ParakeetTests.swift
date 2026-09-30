@@ -21,7 +21,7 @@ final class UtteranceSegmenterTests: XCTestCase {
     }
 
     private func finals(_ actions: [UtteranceSegmenter.Action]) -> [(start: Double, end: Double, count: Int)] {
-        actions.compactMap { if case .final(let samples, let start, let end) = $0 { return (start, end, samples.count) } else { return nil } }
+        actions.compactMap { if case .final(let samples, let start, let end, _) = $0 { return (start, end, samples.count) } else { return nil } }
     }
 
     private func lives(_ actions: [UtteranceSegmenter.Action]) -> [Double] {
@@ -61,6 +61,14 @@ final class UtteranceSegmenterTests: XCTestCase {
         XCTAssertTrue(parts.allSatisfy { Double($0.count) / rate <= 14.01 })
         XCTAssertEqual(parts[0].end, parts[1].start, accuracy: 0.001, "no audio lost between the parts")
         XCTAssertEqual(parts[0].end, 12.5, accuracy: 0.1, "cut in the quiet moment")
+    }
+
+    func testRepeatedWordsAcrossACutAreRemoved() {
+        typealias S = UtteranceSegmenter
+        XCTAssertEqual(S.removingOverlap("the same time", after: "write to the same key at the same time?"), "")
+        XCTAssertEqual(S.removingOverlap("Same time. Great, that makes sense.", after: "at the same time?"), "Great, that makes sense.")
+        XCTAssertEqual(S.removingOverlap("and then we ship", after: "we test it"), "and then we ship", "no overlap, nothing removed")
+        XCTAssertEqual(S.removingOverlap("it works", after: ""), "it works")
     }
 
     func testAClickIsDiscarded() {
