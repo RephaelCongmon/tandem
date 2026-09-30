@@ -91,6 +91,19 @@ enum DebugCommands {
             model.chat.composerText = argument
         case "effort":
             if let effort = ReasoningEffort(rawValue: argument) { model.settings.effort = effort }
+        case "provider":
+            // provider <kind> [model], e.g. `provider codex gpt-6-astra`
+            let words = argument.split(separator: " ").map(String.init)
+            if let kind = words.first.flatMap(AIProviderKind.init(rawValue:)) {
+                model.settings.provider = kind
+                if words.count > 1 { model.settings.currentModel = words[1] }
+                if kind == .codex { model.codex.refreshInBackground() }
+            }
+        case "codexStatus":
+            Task {
+                await model.codex.refresh()
+                Logger(subsystem: "com.rofel.tandem", category: "Debug").notice("TANDEM-CODEX \(model.codex.status?.summary ?? "nil", privacy: .public) models=\(model.codex.models.map(\.id), privacy: .public)")
+            }
         case "claudeStatus":
             Task {
                 await model.claudeCode.refresh()

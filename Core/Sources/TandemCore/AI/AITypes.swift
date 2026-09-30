@@ -11,6 +11,9 @@ public enum AIProviderKind: String, Codable, CaseIterable, Sendable, Identifiabl
     /// The Claude Code CLI on this Mac, answering on the user's Claude subscription.
     /// `AIEndpoint.baseURL` is the path of the `claude` executable.
     case claudeCode
+    /// The Codex CLI on this Mac, answering on the user's ChatGPT subscription.
+    /// `AIEndpoint.baseURL` is the path of the `codex` executable.
+    case codex
 
     public var id: String { rawValue }
 
@@ -20,6 +23,7 @@ public enum AIProviderKind: String, Codable, CaseIterable, Sendable, Identifiabl
         case .openAI: return "OpenAI"
         case .openAICompatible: return "Custom (OpenAI-compatible)"
         case .claudeCode: return "Claude Code"
+        case .codex: return "Codex"
         }
     }
 
@@ -29,19 +33,24 @@ public enum AIProviderKind: String, Codable, CaseIterable, Sendable, Identifiabl
         case .openAI: return URL(string: "https://api.openai.com/v1/")!
         case .openAICompatible: return URL(string: "http://localhost:1234/v1/")!
         case .claudeCode: return URL(fileURLWithPath: NSHomeDirectory()).appendingPathComponent(".local/bin/claude")
+        case .codex: return URL(fileURLWithPath: "/opt/homebrew/bin/codex")
         }
     }
 
     /// Whether an API key is mandatory for this provider.
     public var requiresAPIKey: Bool { self == .anthropic || self == .openAI }
 
-    /// The order providers are offered in: the no-key subscription option first.
-    public static let menuOrder: [AIProviderKind] = [.claudeCode, .anthropic, .openAI, .openAICompatible]
+    /// The order providers are offered in: the no-key subscription options first.
+    public static let menuOrder: [AIProviderKind] = [.claudeCode, .codex, .anthropic, .openAI, .openAICompatible]
+
+    /// Runs a command-line tool signed in with the user's subscription (no API key).
+    public var usesSubscription: Bool { self == .claudeCode || self == .codex }
 
     /// Label for pickers, saying how each option is paid for.
     public var menuTitle: String {
         switch self {
         case .claudeCode: return "Claude Code — your Claude subscription"
+        case .codex: return "Codex — your ChatGPT subscription"
         case .anthropic: return "Claude API — API key"
         case .openAI: return "OpenAI — API key"
         case .openAICompatible: return "Custom server (OpenAI-compatible)"

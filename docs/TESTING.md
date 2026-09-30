@@ -11,6 +11,7 @@ It runs:
   - Listening: audio messages on the wire, Opus and PCM round trips, packetizing, gain and levels, the audio timeline, transcript excerpts and their context text, skills that carry transcripts, and a **live on-device transcription** of a sentence spoken by `say`, streamed in 100 ms chunks (macOS 26; the SFSpeechRecognizer variant runs only where that permission was granted).
   - Parakeet: the utterance segmenter (captions while speaking, finishing at pauses, cutting long speech in its quietest moment, ignoring clicks and hum), and a live Parakeet transcription of two spoken questions (`TANDEM_PARAKEET_MODELS`; `scripts/test_all.sh` sets it when the app's model is downloaded). The Hugging Face fallback download is opt-in with `TANDEM_PARAKEET_DOWNLOAD_TEST=1`.
   - Updates between the Macs: the new messages on the wire, and the package assembler (intact, damaged, oversized and foreign packages).
+  - Codex: launch arguments (only known features, MCP servers from config), sign-in parsing (never keeps an API key), error mapping. The client is tested against a stand-in `codex app-server` (Python): streaming, safety parameters, screenshots as files removed afterwards, thread reuse and folding, failures, declined approvals, interrupt on Stop, and the model list. `TANDEM_LIVE_CODEX=1 swift test --filter CodexLiveTests` asks the real Codex twice in one thread and checks it remembers.
   - The Claude Code client is tested against recorded CLI output and a fake `claude` script: streaming, stdin contents, errors, a CLI that quits without reading, cancellation, idle timeout, and live sessions (a follow-up reuses the process and sends only the new message; a changed history starts over; the spare process; a failed answer isn't kept).
   - `TANDEM_LIVE_CLAUDE=1 swift test --filter AIClaudeCodeLiveTests` (in `Core/`) checks the real installed CLI's version and sign-in.
 - **14 app tests.** Chat streaming, failure/retry, stop, snapshots, busy handling, settings persistence, hotkey overrides, converting ScreenCaptureKit audio buffers, and transcripts attached to questions (Follow-up carries the spoken question, then only newer speech; nothing when Listen or the setting is off).
@@ -36,6 +37,7 @@ Verified this way:
 - the markup editor, onboarding steps, and every Settings pane (rendered in-app with `snap`);
 - **listening**, with `TANDEM_TEST_AUDIO` playing a two-question meeting clip on the Source. Captions follow the speech. **Follow-up** pressed about a second after each question got the complete question, and only the new speech the second time. Claude restated it with speech-to-text mistakes fixed ("cash invalidation" → cache invalidation) and answered, with first words 2.3 s after the click for a new thread and 1.7 s in a thread with a live Claude Code session;
 - **Parakeet** in the app: the model downloaded from the `speech-models-1` mirror (checksum-checked) 46 s after the Studio started, then loaded in 0.3 s. On the two-question clip it heard "write path" and "cache invalidation" where Apple's recognizer heard "right path" and "cash invalidation". Follow-up got both questions complete, with first words 2.2–2.4 s after the click. A 40-clip Earnings-22 bake-off on this Mac gave 14.4% word errors for Parakeet (Core ML) against 19.7% for Apple, at 93× real time;
+- **Codex** (0.159.2, signed in with ChatGPT). Settings showed its status and your account's live model list. The two-question clip with GPT-6.1 Sol got both questions right with the Follow-up format, with first words at 3.8 s (new thread) and 2.7 s (the follow-up in the same thread). The real Codex refused to run anything with Tandem's launch flags ("NO TOOLS");
 - **updates between the Macs**, with a 0.0.0 Source and a 9.0.0 Studio (both signed with the team's Apple Development certificate). The Studio sent its 19 MB app on connect. The Source checked and installed it in 0.2 s, relaunched with its arguments, and reconnected on 9.0.0 3 s after the offer;
 - the app's real `AudioCaptureService`, compiled into a harness running with the terminal's Screen Recording permission, capturing system audio while `afplay` played the clip. The audio went through Opus and the wire codec, and the full transcript came out (about 21 kbps).
 
@@ -66,19 +68,20 @@ These need two real Macs (and permissions only a person can grant):
    - Pause on the Source: the Studio shows *Sharing is paused* and snapshots are refused.
    - Lock the Source: sharing pauses and resumes on unlock.
    - With "Keep screenshots" off, relaunching the Studio shows *Not kept* placeholders.
-8. **Listening.**
+8. **Codex.** Choose **Codex — your ChatGPT subscription** in Settings › AI. The status says *signed in with ChatGPT*, **Test** answers, and the model menu lists your plan's models. Ask with a screenshot, then a follow-up that relies on the first answer.
+9. **Listening.**
    - Join a call or play a video on the Source. On the Studio, turn on **Listen**: the caption shows the speech about a second behind, and the Source's window shows *Hearing this Mac's audio*.
    - Have someone ask a question, press **Follow-up**: the answer restates that question and answers it.
    - Ask a second question in the same thread: its **Transcript** chip holds only the newer speech.
    - Pause or lock the Source: the caption explains why there's no audio, and it resumes afterwards.
    - Turn off Settings › Sharing › *Let the other Mac hear this Mac's audio* on the Source: the Studio says audio sharing is off.
    - On a Studio running macOS 14 or 15, the first Listen asks for Speech Recognition permission.
-9. **Real AI.**
+10. **Real AI.**
    - With Claude Code signed in on the Studio, Settings › AI shows the account and plan. **Test** answers in a few seconds. Sign out (`claude auth logout`): the chat shows how to sign in again.
    - Add an Anthropic key, press **Test** in Settings › AI, then ask with a screenshot.
    - Repeat with an OpenAI key.
    - Try an OpenAI-compatible local server (LM Studio at `http://localhost:1234/v1`).
-10. **Sleep/wake.** Sleep the Studio, wake it: it reconnects on its own.
-11. **Background Source.** Turn on **Open at login** on the Source, log out and in: no window appears, the menu bar icon does, and the Studio connects. Clicking the Dock icon or **Open Tandem** shows the window.
-12. **Updates.** On the asking Mac, **Update Now**; within seconds of it restarting, the shared Mac shows the new version too (Settings › General › Updates › *Shared Mac*), with nothing done on it.
-13. **Updates from GitHub.** With an older version installed, **Tandem › Check for Updates…** shows the toolbar's **Update** button and its panel. **Update Now** replaces the app and relaunches the new version; from a disk image, it installs into Applications. Without GitHub access, Settings › General › Updates explains how to add it.
+11. **Sleep/wake.** Sleep the Studio, wake it: it reconnects on its own.
+12. **Background Source.** Turn on **Open at login** on the Source, log out and in: no window appears, the menu bar icon does, and the Studio connects. Clicking the Dock icon or **Open Tandem** shows the window.
+13. **Updates.** On the asking Mac, **Update Now**; within seconds of it restarting, the shared Mac shows the new version too (Settings › General › Updates › *Shared Mac*), with nothing done on it.
+14. **Updates from GitHub.** With an older version installed, **Tandem › Check for Updates…** shows the toolbar's **Update** button and its panel. **Update Now** replaces the app and relaunches the new version; from a disk image, it installs into Applications. Without GitHub access, Settings › General › Updates explains how to add it.

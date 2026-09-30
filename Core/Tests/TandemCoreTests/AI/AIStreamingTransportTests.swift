@@ -3,7 +3,7 @@ import XCTest
 
 /// Provider-neutral transport behavior: cancellation, transport errors, URLs, the factory, logging.
 final class AIStreamingTransportTests: XCTestCase {
-    /// Providers reached over HTTP (Claude Code runs a local process; see AIClaudeCodeTests).
+    /// Providers reached over HTTP (Claude Code and Codex run local processes; see their tests).
     static let httpProviders: [AIProviderKind] = [.anthropic, .openAI, .openAICompatible]
 
     /// A stream that sends a first text delta and then stalls with the connection open.
@@ -20,7 +20,7 @@ final class AIStreamingTransportTests: XCTestCase {
                 ("response.created", #"{"type":"response.created","response":{"model":"gpt-6-astra"}}"#),
                 ("response.output_text.delta", #"{"type":"response.output_text.delta","delta":"First"}"#)
             ])
-        case .openAICompatible, .claudeCode:
+        case .openAICompatible, .claudeCode, .codex:
             body = aiTestSSE([(nil, #"{"model":"m","choices":[{"index":0,"delta":{"content":"First"}}]}"#)])
         }
         var stub = AITestStubResponse.sse(body)
@@ -32,7 +32,7 @@ final class AIStreamingTransportTests: XCTestCase {
         switch kind {
         case .anthropic: return "claude-opus-5-5"
         case .openAI: return "gpt-6-astra"
-        case .openAICompatible, .claudeCode: return "local-model"
+        case .openAICompatible, .claudeCode, .codex: return "local-model"
         }
     }
 

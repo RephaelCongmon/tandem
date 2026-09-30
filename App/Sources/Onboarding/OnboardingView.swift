@@ -363,6 +363,8 @@ private struct StudioSetupStep: View {
                 Text("Connect your AI").font(TandemFont.title)
                 Text(settings.provider == .claudeCode
                      ? "Tandem asks Claude through Claude Code on this Mac, using your Claude subscription. No API key needed."
+                     : settings.provider == .codex
+                     ? "Tandem asks OpenAI's models through Codex on this Mac, using your ChatGPT subscription. No API key needed."
                      : "Tandem talks to the provider directly with your key. The key is stored in your Keychain.")
                     .font(TandemFont.body)
                     .foregroundStyle(Theme.textSecondary)
@@ -377,9 +379,22 @@ private struct StudioSetupStep: View {
                 keyDraft = model.keys.key(for: provider)
                 error = nil
                 if provider == .claudeCode { model.claudeCode.refreshInBackground() }
+                if provider == .codex { model.codex.refreshInBackground() }
             }
 
-            if settings.provider == .claudeCode {
+            if settings.provider == .codex {
+                VStack(alignment: .leading, spacing: 8) {
+                    CodexStatusRow()
+                    if let status = model.codex.status, !status.isReady {
+                        Button("Check Again") { model.codex.refreshInBackground() }
+                            .buttonStyle(TandemButtonStyle(.secondary, size: .small))
+                            .disabled(model.codex.isChecking)
+                    }
+                }
+                .padding(Spacing.m)
+                .frame(maxWidth: .infinity, alignment: .leading)
+                .background(RoundedRectangle(cornerRadius: Radius.m, style: .continuous).fill(Theme.surfaceRaised))
+            } else if settings.provider == .claudeCode {
                 VStack(alignment: .leading, spacing: 8) {
                     ClaudeCodeStatusRow()
                     if let status = model.claudeCode.status, !status.isReady {
@@ -451,7 +466,7 @@ private struct StudioSetupStep: View {
 
     private var canContinue: Bool {
         switch model.settings.provider {
-        case .claudeCode, .openAICompatible: return true
+        case .claudeCode, .codex, .openAICompatible: return true
         case .anthropic, .openAI: return !keyDraft.trimmingCharacters(in: .whitespaces).isEmpty
         }
     }
@@ -461,7 +476,7 @@ private struct StudioSetupStep: View {
         case .anthropic: return "sk-ant-…"
         case .openAI: return "sk-…"
         case .openAICompatible: return "Leave empty if the server doesn't need one"
-        case .claudeCode: return ""
+        case .claudeCode, .codex: return ""
         }
     }
 
@@ -469,7 +484,7 @@ private struct StudioSetupStep: View {
         switch model.settings.provider {
         case .anthropic: return URL(string: "https://platform.claude.com/settings/keys")
         case .openAI: return URL(string: "https://platform.openai.com/api-keys")
-        case .openAICompatible, .claudeCode: return nil
+        case .openAICompatible, .claudeCode, .codex: return nil
         }
     }
 }

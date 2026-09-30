@@ -18,6 +18,7 @@ final class AppModel {
     let source: SourceEngine
     let studio: StudioEngine
     let claudeCode: ClaudeCodeService
+    let codex: CodexService
     let updates: UpdateController
     let hotkeys: HotkeyController
     let toasts = ToastCenter()
@@ -68,10 +69,13 @@ final class AppModel {
         self.updates = updates
         let claudeCode = ClaudeCodeService(settings: settings)
         self.claudeCode = claudeCode
+        let codex = CodexService(settings: settings)
+        self.codex = codex
         studio = StudioEngine(
             settings: settings,
             keys: keys,
             claudeCodeExecutable: { claudeCode.executable },
+            codexExecutable: { codex.executable },
             speechModelMirror: Self.speechModelMirror(updates: updates)
         )
         hotkeys = HotkeyController()
@@ -193,10 +197,12 @@ final class AppModel {
             studio.chat.stop()
             studio.transcription.suspend()
             ClaudeCodeSessionPool.shared.removeAll()
+            CodexSessionPool.shared.removeAll()
             source.activate()
         case .studio:
             source.deactivate()
             claudeCode.refreshInBackground()
+            if settings.provider == .codex { codex.refreshInBackground() }
             studio.transcription.resume()
             studio.transcription.prepareModelInBackground()
             // Once Claude Code has been found, have it running before the first question.
@@ -318,6 +324,7 @@ final class AppModel {
     func prepareForTermination() {
         studio.chat.stop()
         ClaudeCodeSessionPool.shared.removeAll()
+        CodexSessionPool.shared.removeAll()
         studio.chat.flush()
         connections.deactivate()
         hotkeys.unregisterAll()

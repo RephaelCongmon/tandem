@@ -78,10 +78,11 @@ final class StudioEngine {
         settings: SettingsStore,
         keys: APIKeyStore,
         claudeCodeExecutable: @escaping @MainActor () -> URL? = { nil },
+        codexExecutable: @escaping @MainActor () -> URL? = { nil },
         speechModelMirror: ParakeetModelStore.MirrorDownload? = nil
     ) {
         self.settings = settings
-        chat = ChatController(settings: settings, keys: keys, claudeCodeExecutable: claudeCodeExecutable)
+        chat = ChatController(settings: settings, keys: keys, claudeCodeExecutable: claudeCodeExecutable, codexExecutable: codexExecutable)
         transcription = TranscriptionService(settings: settings, modelMirror: speechModelMirror)
         sharedMacUpdater = SharedMacUpdater(settings: settings)
         chat.studio = self

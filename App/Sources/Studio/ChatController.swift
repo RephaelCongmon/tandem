@@ -86,6 +86,7 @@ final class ChatController {
 
     @ObservationIgnored private let clientFactory: ClientFactory
     @ObservationIgnored private let claudeCodeExecutable: @MainActor () -> URL?
+    @ObservationIgnored private let codexExecutable: @MainActor () -> URL?
 
     /// Stores and the client factory are injectable for tests.
     init(
@@ -94,12 +95,14 @@ final class ChatController {
         threadStore: ThreadStore? = nil,
         snapshots: SnapshotStore? = nil,
         clientFactory: @escaping ClientFactory = { AIClientFactory.make(endpoint: $0) },
-        claudeCodeExecutable: @escaping @MainActor () -> URL? = { ClaudeCodeLocator.quickLocate(override: nil) }
+        claudeCodeExecutable: @escaping @MainActor () -> URL? = { ClaudeCodeLocator.quickLocate(override: nil) },
+        codexExecutable: @escaping @MainActor () -> URL? = { CodexLocator.quickLocate(override: nil) }
     ) {
         self.settings = settings
         self.keys = keys
         self.clientFactory = clientFactory
         self.claudeCodeExecutable = claudeCodeExecutable
+        self.codexExecutable = codexExecutable
         attachLiveSnapshot = settings.attachLiveSnapshot
         store = threadStore ?? ThreadStore(directory: AppEnvironment.threadsDirectory)
         self.snapshots = snapshots ?? SnapshotStore(directory: AppEnvironment.snapshotsDirectory, keepOnDisk: settings.keepImages)
@@ -137,7 +140,12 @@ final class ChatController {
 
     /// Starts Claude Code ahead of the next question, so it doesn't wait for the CLI to launch.
     func prewarm() {
-        guard settings.provider == .claudeCode, let made = try? makeClient(), let claude = made.0 as? ClaudeCodeClient else { return }
+        guard settings.provider.usesSubscription, let made = try? makeClient() else { return }
+        if let codex = made.0 as? CodexClient {
+            codex.prewarm()
+            return
+        }
+        guard let claude = made.0 as? ClaudeCodeClient else { return }
         claude.prewarm(for: AIRequest(
             model: made.2,
             systemPrompt: settings.systemPrompt,
@@ -162,6 +170,7 @@ final class ChatController {
     func deleteThread(_ id: UUID) {
         if streaming?.threadID == id { stop() }
         ClaudeCodeSessionPool.shared.end(conversationID: id)
+        CodexSessionPool.shared.end(conversationID: id)
         guard let index = threads.firstIndex(where: { $0.id == id }) else { return }
         let ids = threads[index].messages.flatMap(\.attachments).map(\.id)
         snapshots.remove(ids)
@@ -186,6 +195,7 @@ final class ChatController {
     func clearAllHistory() {
         stop()
         ClaudeCodeSessionPool.shared.removeAll()
+        CodexSessionPool.shared.removeAll()
         threads.removeAll()
         store.deleteAll()
         snapshots.removeAll()
@@ -433,6 +443,12 @@ final class ChatController {
             // Runs on the Claude subscription the CLI is signed in with; no key involved.
             guard let executable = claudeCodeExecutable() else { throw AIError.invalidConfiguration(ClaudeCodeMessages.notFound) }
             let endpoint = AIEndpoint(kind: .claudeCode, baseURL: executable, apiKey: "")
+            return (clientFactory(endpoint), provider, model)
+        }
+        if provider == .codex {
+            // Runs on the ChatGPT subscription Codex is signed in with.
+            guard let executable = codexExecutable() else { throw AIError.invalidConfiguration(CodexMessages.notFound) }
+            let endpoint = AIEndpoint(kind: .codex, baseURL: executable, apiKey: "")
             return (clientFactory(endpoint), provider, model)
         }
         let key = keys.key(for: provider)

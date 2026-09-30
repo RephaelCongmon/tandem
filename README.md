@@ -1,6 +1,6 @@
 # Tandem
 
-**Two Macs, one conversation.** Tandem pairs two nearby Macs. One Mac (the **Source**) streams its screen, a window, or its camera to the other (the **Studio**) in real time. The Studio sends snapshots of that screen — with your own context, markup and redactions — to **Claude** or **OpenAI**, and shows the answers as a conversation thread. It can also **listen**: the Source's computer audio (a meeting or call) is transcribed live on the Studio, so a question someone asks out loud can be answered with one click.
+**Two Macs, one conversation.** Tandem pairs two nearby Macs. One Mac (the **Source**) streams its screen, a window, or its camera to the other (the **Studio**) in real time. The Studio sends snapshots of that screen — with your own context, markup and redactions — to **Claude** or **OpenAI's GPT models**, and shows the answers as a conversation thread. It can also **listen**: the Source's computer audio (a meeting or call) is transcribed live on the Studio, so a question someone asks out loud can be answered with one click.
 
 It's built for moments like: your work laptop can't run AI tools but your personal one can; a demo or rehearsal where a second Mac watches and advises; a long-running job you want summarized every few minutes; or simply keeping the AI conversation off the screen you're working on.
 
@@ -8,7 +8,7 @@ It's built for moments like: your work laptop can't run AI tools but your person
 
 - **Real-time live view.** Hardware H.264 with low-latency rate control, ack-based flow control that bounds queuing to about one round trip, and adaptive bitrate, at 1080p/30–60 fps. The live HUD shows measured capture-to-display latency; two instances on one Mac measured **8–20 ms**, and between Macs you add your link's round-trip time (a cable or good Wi-Fi keeps it in the tens of milliseconds).
 - **Any link.** Wi-Fi/LAN, **peer-to-peer Wi-Fi** (no shared network needed — like AirDrop), **Thunderbolt/Ethernet cable**, or **Bluetooth LE** as a last resort. Tandem picks the best automatically and shows which one is in use.
-- **Ask Claude or OpenAI.** Streaming answers with Markdown, code blocks, tables and an optional reasoning summary. By default Tandem asks Claude through **Claude Code on your Claude subscription**, with no API key. Claude Opus 5.5 is the default (Fable 5.1, Sonnet 5.5 and Haiku 4.5 are available). An Anthropic or OpenAI API key (GPT‑6 Astra/Sol/Luna), or any OpenAI-compatible server (LM Studio, Ollama, vLLM), also works.
+- **Ask Claude or OpenAI.** Streaming answers with Markdown, code blocks, tables and an optional reasoning summary. By default Tandem asks Claude through **Claude Code on your Claude subscription**, with no API key. Claude Opus 5.5 is the default (Fable 5.1, Sonnet 5.5 and Haiku 4.5 are available). Or use **Codex on your ChatGPT subscription**, also with no API key, for GPT-6.1 Sol (default), GPT-6 Astra, Sol and Luna, and whatever else your plan offers. An Anthropic or OpenAI API key (GPT‑6 Astra/Sol/Luna), or any OpenAI-compatible server (LM Studio, Ollama, vLLM), also works.
 - **Your context, your way.** Type a question; attach a fresh screenshot automatically; annotate it first (boxes, arrows, pen, highlight, text), **crop** to what matters and **redact** anything private before it leaves the Mac.
 - **On demand, by shortcut, or on a schedule.** Global shortcuts on both Macs, a "send with note" panel on the Source, and auto-capture every N seconds — optionally only when the screen actually changed (detected on the Source, so unchanged screens aren't even sent), with an hourly cap.
 - **Hears the meeting, too.** Turn on **Listen** and the Source's computer audio streams to the Studio (Opus, about 30 kbps) and is transcribed on-device as it's spoken, about a second behind, by NVIDIA's **Parakeet** model on the Neural Engine (about a quarter fewer mistakes than Apple's recognizer on conversation). **Follow-up** finds the question just asked out loud, or on screen, and answers it in a few plain sentences. The transcript also goes with every other question, so the AI knows what's being discussed.
@@ -21,6 +21,7 @@ It's built for moments like: your work laptop can't run AI tools but your person
 - Two Macs running **macOS 14 Sonoma or later** (Liquid Glass chrome on macOS 26).
 - On the Studio Mac, one of:
   - [Claude Code](https://claude.com/claude-code), installed and signed in with your Claude account (run `claude` once in Terminal). This is the default, and questions count toward your Claude plan's usage.
+  - [Codex](https://chatgpt.com/codex), installed (`brew install --cask codex`) and signed in with your ChatGPT account (`codex login`). Questions count toward your ChatGPT plan's usage.
   - An Anthropic or OpenAI API key.
   - A local OpenAI-compatible server.
 
@@ -103,6 +104,7 @@ If discovery is blocked (guest or corporate Wi-Fi with client isolation), use **
 - **Pairing** uses an X25519 key exchange with a commitment scheme and a 6-digit numeric comparison (as in Bluetooth LE Secure Connections): a man-in-the-middle can only succeed with probability 10⁻⁶ per attempt, and only if the user approves mismatched codes.
 - **Sessions** mix a fresh ephemeral key agreement with the long-term pairing key (forward secrecy, mutual authentication) and protect every record with ChaCha20-Poly1305; replayed, reordered or modified data is rejected.
 - **Keys** — pairing keys and API keys — are stored in the Keychain. Unpair a Mac any time in Settings › Devices.
+- **Codex** answers run `codex app-server` on the Studio Mac with no tools (no shell, code execution, browser, apps, image generation or web search), with your plugins and MCP servers turned off, and with Tandem's instructions in place of Codex's own. Every conversation is an ephemeral, read-only thread that isn't saved to Codex's history. Codex still reads your `~/.codex/AGENTS.md`, which can't be turned off in this mode. Tandem never sees your ChatGPT sign-in; Codex uses its own.
 - **Claude Code** answers run the `claude` command on the Studio Mac with its tools, plugins, hooks, MCP servers and CLAUDE.md files turned off, and Tandem's instructions in place of Claude Code's own. Nothing is saved to Claude Code's session history. Tandem never sees your Claude sign-in; the CLI uses its own.
 - **Not sandboxed.** Tandem runs outside the App Sandbox so it can use your installed Claude Code and its sign-in. It is signed with the hardened runtime, and still asks macOS for camera, screen recording and local network access.
 - **Capture** only runs while a paired Studio is actually watching (and never while paused or locked). macOS shows its screen-recording indicator whenever capture is active.
@@ -117,6 +119,7 @@ If discovery is blocked (guest or corporate Wi-Fi with client isolation), use **
 - **"Screen Recording permission is needed."** Enable Tandem in System Settings › Privacy & Security › Screen & System Audio Recording, then reopen Tandem on the shared Mac.
 - **"The pairing is no longer valid."** One Mac was reset or unpaired. Pair again from the Studio.
 - **Live view is off / paused.** The Studio pauses the stream while its window is hidden, and the Source pauses while it's locked or paused — snapshots and asking still work whenever the Source is sharing.
+- **Codex says it isn't signed in.** Run `codex login` in Terminal and choose ChatGPT, then **Check Again** in Settings › AI. If it's signed in with an API key instead, questions are billed to that key.
 - **AI errors.** Check the key in Settings › AI (the **Test** button lists your available models). Rate limits and overloads show a retry option on the message.
 - **Listen shows no words.** The caption says what's missing. The shared Mac may need an update, have audio sharing turned off, be paused or locked, or be missing Screen & System Audio Recording permission. If it says *Waiting for sound*, nothing is playing on the shared Mac. On macOS 14–15, allow Tandem in System Settings › Privacy & Security › Speech Recognition.
 

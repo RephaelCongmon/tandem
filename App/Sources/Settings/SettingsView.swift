@@ -156,8 +156,21 @@ private struct AISettings: View {
                     keyStatus = nil
                     remoteModels = []
                     if provider == .claudeCode { model.claudeCode.refreshInBackground() }
+                    if provider == .codex { model.codex.refreshInBackground() }
                 }
-                if settings.provider == .claudeCode {
+                if settings.provider == .codex {
+                    CodexStatusRow()
+                    HStack {
+                        TextField("Location", text: $settings.codexPath, prompt: Text(model.codex.executable?.path ?? "Found automatically"))
+                            .onSubmit { model.codex.refreshInBackground() }
+                        Button("Check Again") { model.codex.refreshInBackground() }
+                            .disabled(model.codex.isChecking)
+                        Button(testing ? "Testing…" : "Test") { Task { await test() } }
+                            .disabled(testing)
+                    }
+                    Text("Questions go to OpenAI's models through Codex on this Mac and count toward your ChatGPT plan's usage, with no API key. Tandem starts Codex with no tools (no shell, code, browser, apps or web search) and without your plugins or MCP servers; Codex still reads your ~/.codex/AGENTS.md. Each conversation is a private thread that isn't saved.")
+                        .font(TandemFont.caption).foregroundStyle(Theme.textSecondary)
+                } else if settings.provider == .claudeCode {
                     ClaudeCodeStatusRow()
                     HStack {
                         TextField("Location", text: $settings.claudeCodePath, prompt: Text(model.claudeCode.executable?.path ?? "Found automatically"))
@@ -193,12 +206,15 @@ private struct AISettings: View {
                         ForEach(ModelCatalog.presets(for: settings.provider)) { preset in
                             Text("\(preset.displayName) — \(preset.summary)").tag(preset.id)
                         }
-                        let extra = remoteModels.map(\.id).filter { id in !ModelCatalog.presets(for: settings.provider).contains { $0.id == id } }
+                        let listed = settings.provider == .codex ? model.codex.models : remoteModels
+                        let extra = listed.map(\.id).filter { id in !ModelCatalog.presets(for: settings.provider).contains { $0.id == id } }
                         if !extra.isEmpty {
                             Divider()
-                            ForEach(extra, id: \.self) { Text($0).tag($0) }
+                            ForEach(extra, id: \.self) { id in
+                                Text(listed.first { $0.id == id }?.displayName ?? id).tag(id)
+                            }
                         }
-                        if !ModelCatalog.presets(for: settings.provider).contains(where: { $0.id == settings.currentModel }) && !remoteModels.contains(where: { $0.id == settings.currentModel }) {
+                        if !ModelCatalog.presets(for: settings.provider).contains(where: { $0.id == settings.currentModel }) && !listed.contains(where: { $0.id == settings.currentModel }) {
                             Text(settings.currentModel).tag(settings.currentModel)
                         }
                     }
@@ -234,6 +250,7 @@ private struct AISettings: View {
         .onAppear {
             keyDraft = model.keys.key(for: model.settings.provider)
             if model.settings.provider == .claudeCode { model.claudeCode.refreshInBackground() }
+            if model.settings.provider == .codex { model.codex.refreshInBackground() }
         }
     }
 
@@ -254,6 +271,10 @@ private struct AISettings: View {
             keyStatus = await model.claudeCode.test(model: settings.currentModel)
             return
         }
+        if settings.provider == .codex {
+            keyStatus = await model.codex.test(model: settings.currentModel)
+            return
+        }
         saveKey()
         let baseURL = settings.provider == .openAICompatible ? URL(string: settings.customBaseURL) : nil
         let client = AIClientFactory.make(endpoint: AIEndpoint(kind: settings.provider, baseURL: baseURL, apiKey: model.keys.key(for: settings.provider)))
@@ -264,6 +285,28 @@ private struct AISettings: View {
         } catch {
             keyStatus = (error as? LocalizedError)?.errorDescription ?? error.localizedDescription
         }
+    }
+}
+
+/// Whether Codex is installed and signed in, with the fix when it isn't.
+struct CodexStatusRow: View {
+    @Environment(AppModel.self) private var model
+
+    var body: some View {
+        HStack(alignment: .firstTextBaseline, spacing: 8) {
+            if model.codex.isChecking && model.codex.status == nil {
+                ProgressView().controlSize(.small)
+                Text("Looking for Codex…").foregroundStyle(Theme.textSecondary)
+            } else if let status = model.codex.status {
+                Image(systemName: status.isReady ? "checkmark.circle.fill" : "exclamationmark.triangle.fill")
+                    .foregroundStyle(status.isReady ? Theme.success : Theme.warning)
+                Text(status.summary)
+                    .foregroundStyle(status.isReady ? Theme.textPrimary : Theme.textSecondary)
+                    .fixedSize(horizontal: false, vertical: true)
+                    .textSelection(.enabled)
+            }
+        }
+        .font(TandemFont.callout)
     }
 }
 

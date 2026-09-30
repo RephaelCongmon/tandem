@@ -35,7 +35,9 @@ struct ThreadPanel: View {
                         systemImage: "terminal",
                         tint: Theme.warning,
                         actionTitle: "Check Again",
-                        action: { model.claudeCode.refreshInBackground() }
+                        action: {
+                            if model.settings.provider == .codex { model.codex.refreshInBackground() } else { model.claudeCode.refreshInBackground() }
+                        }
                     )
                 }
                 if let banner = model.chat.banner {
@@ -68,10 +70,18 @@ struct ThreadPanel: View {
         model.settings.provider.requiresAPIKey && !model.keys.hasKey(for: model.settings.provider)
     }
 
-    /// Why Claude Code can't answer yet, once a check has run.
+    /// Why Claude Code or Codex can't answer yet, once a check has run.
     private var claudeCodeProblem: String? {
-        guard model.settings.provider == .claudeCode, let status = model.claudeCode.status, !status.isReady else { return nil }
-        return status.summary
+        switch model.settings.provider {
+        case .claudeCode:
+            guard let status = model.claudeCode.status, !status.isReady else { return nil }
+            return status.summary
+        case .codex:
+            guard let status = model.codex.status, !status.isReady else { return nil }
+            return status.summary
+        default:
+            return nil
+        }
     }
 }
 

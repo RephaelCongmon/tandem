@@ -190,6 +190,9 @@ final class SettingsStore {
     var claudeCodeModel: String = ModelCatalog.defaultModelID(for: .claudeCode) ?? "claude-opus-5-5" { didSet { store(claudeCodeModel, "ai.claudeCodeModel") } }
     /// Where `claude` is installed, when it isn't found automatically. Empty means "find it".
     var claudeCodePath: String = "" { didSet { store(claudeCodePath, "ai.claudeCodePath") } }
+    var codexModel: String = ModelCatalog.defaultModelID(for: .codex) ?? "gpt-6.1-sol" { didSet { store(codexModel, "ai.codexModel") } }
+    /// Where `codex` is installed, when it isn't found automatically. Empty means "find it".
+    var codexPath: String = "" { didSet { store(codexPath, "ai.codexPath") } }
     var anthropicModel: String = ModelCatalog.defaultModelID(for: .anthropic) ?? "claude-opus-5-5" { didSet { store(anthropicModel, "ai.anthropicModel") } }
     var openAIModel: String = ModelCatalog.defaultModelID(for: .openAI) ?? "gpt-6-astra" { didSet { store(openAIModel, "ai.openAIModel") } }
     var customModel: String = "" { didSet { store(customModel, "ai.customModel") } }
@@ -281,6 +284,8 @@ final class SettingsStore {
         provider = load("ai.provider", .claudeCode)
         claudeCodeModel = load("ai.claudeCodeModel", ModelCatalog.defaultModelID(for: .claudeCode) ?? "claude-opus-5-5")
         claudeCodePath = load("ai.claudeCodePath", "")
+        codexModel = load("ai.codexModel", ModelCatalog.defaultModelID(for: .codex) ?? "gpt-6.1-sol")
+        codexPath = load("ai.codexPath", "")
         anthropicModel = load("ai.anthropicModel", ModelCatalog.defaultModelID(for: .anthropic) ?? "claude-opus-5-5")
         openAIModel = load("ai.openAIModel", ModelCatalog.defaultModelID(for: .openAI) ?? "gpt-6-astra")
         customModel = load("ai.customModel", "")
@@ -325,6 +330,9 @@ final class SettingsStore {
 
     // MARK: Derived
 
+    /// Display names Codex reported for models without a preset (set by the app).
+    @ObservationIgnored var codexModelNames: [String: String] = [:]
+
     /// The model id for the active provider.
     var currentModel: String {
         get {
@@ -333,6 +341,7 @@ final class SettingsStore {
             case .openAI: return openAIModel
             case .openAICompatible: return customModel
             case .claudeCode: return claudeCodeModel
+            case .codex: return codexModel
             }
         }
         set {
@@ -341,6 +350,7 @@ final class SettingsStore {
             case .openAI: openAIModel = newValue
             case .openAICompatible: customModel = newValue
             case .claudeCode: claudeCodeModel = newValue
+            case .codex: codexModel = newValue
             }
         }
     }
@@ -348,6 +358,7 @@ final class SettingsStore {
     var currentModelDisplayName: String {
         let model = currentModel
         if let preset = ModelCatalog.presets(for: provider).first(where: { $0.id == model }) { return preset.displayName }
+        if provider == .codex, let named = codexModelNames[model] { return named }
         return model.isEmpty ? "No model" : model
     }
 

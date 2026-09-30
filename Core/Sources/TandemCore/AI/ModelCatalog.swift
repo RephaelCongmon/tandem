@@ -83,6 +83,15 @@ public enum ModelCatalog {
         AIModelPreset(id: "claude-haiku-4-5", displayName: "Claude Haiku 4.5", summary: "Fastest and lightest; no reasoning", provider: .claudeCode)
     ]
 
+    /// Models offered through Codex (the live list comes from `codex app-server`); the first is
+    /// the default. Usage counts against the ChatGPT plan's limits.
+    public static let codexPresets: [AIModelPreset] = [
+        AIModelPreset(id: "gpt-6.1-sol", displayName: "GPT-6.1 Sol", summary: "Newest; strong reasoning", provider: .codex),
+        AIModelPreset(id: "gpt-6-astra", displayName: "GPT-6 Astra", summary: "OpenAI's flagship", provider: .codex),
+        AIModelPreset(id: "gpt-6-sol", displayName: "GPT-6 Sol", summary: "Balanced speed and depth", provider: .codex),
+        AIModelPreset(id: "gpt-6-luna", displayName: "GPT-6 Luna", summary: "Fastest", provider: .codex)
+    ]
+
     /// OpenAI presets; the first (flagship) is the default.
     public static let openAIPresets: [AIModelPreset] = [
         AIModelPreset(id: "gpt-6-astra", displayName: "GPT-6 Astra", summary: "OpenAI's flagship", provider: .openAI),
@@ -97,6 +106,7 @@ public enum ModelCatalog {
         case .openAI: return openAIPresets
         case .openAICompatible: return []
         case .claudeCode: return claudeCodePresets
+        case .codex: return codexPresets
         }
     }
 
@@ -114,7 +124,19 @@ public enum ModelCatalog {
         case .openAI: return openAICapabilities(for: model)
         case .openAICompatible: return openAICompatibleCapabilities
         case .claudeCode: return anthropicCapabilities(for: model)
+        case .codex: return codexCapabilities(for: model)
         }
+    }
+
+    /// Codex models take every effort level through `turn/start`, and summarize their reasoning.
+    public static func codexCapabilities(for model: String) -> ModelCapabilities {
+        ModelCapabilities(
+            sendsThinkingParam: false,
+            supportsThinkingDisplay: true,
+            supportedEfforts: allEfforts,
+            supportsFallbacks: false,
+            maxImageLongEdge: 2048
+        )
     }
 
     private static let allEfforts = ReasoningEffort.allCases
