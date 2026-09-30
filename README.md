@@ -158,6 +158,8 @@ swift scripts/debug-command.swift A drop                         # cut every lin
 swift scripts/debug-command.swift B localNetwork denied          # show the blocked-network state (allowed ends it)
 ```
 
+Development builds usually show the local-network banner: macOS doesn't recognize each new build, though the two instances still reach each other on the same Mac.
+
 The live Parakeet test (`ParakeetLiveTests`) runs when `TANDEM_PARAKEET_MODELS` points at a folder holding `parakeet-tdt-0.6b-v2`; `scripts/test_all.sh` finds the app's downloaded model by itself. Development builds only update each other with `-TandemPeerUpdates YES`.
 
 To exercise listening without Screen Recording permission, give the Source a sound file to play in a loop as its "computer audio": `TANDEM_TEST_AUDIO=~/clip.aiff scripts/dev-two-macs.sh --mock-ai` (make one with `say -o ~/clip.aiff "…"`). Each question logs how long every step took (`log show --info --predicate 'category == "Chat"' | grep TANDEM-TIMING`).
