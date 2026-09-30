@@ -110,7 +110,7 @@ public struct ClaudeCodeClient: AIClient {
             "--no-session-persistence",
             "--model", model
         ]
-        if let effort = request.effort, ModelCatalog.anthropicCapabilities(for: model).supportedEfforts.contains(effort) {
+        if let effort = ModelCatalog.anthropicCapabilities(for: model).resolvedEffort(request.effort) {
             arguments += ["--effort", effort.rawValue]
         }
         let system = request.systemPrompt.isBlank ? "You are a helpful assistant." : request.systemPrompt

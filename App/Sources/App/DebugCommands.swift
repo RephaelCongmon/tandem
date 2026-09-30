@@ -67,6 +67,8 @@ enum DebugCommands {
             model.openSettingsAction?()
         case "close":
             for window in NSApp.windows where window.identifier?.rawValue == "main" || window.title == "Tandem" { window.close() }
+        case "effort":
+            if let effort = ReasoningEffort(rawValue: argument) { model.settings.effort = effort }
         case "claudeStatus":
             Task {
                 await model.claudeCode.refresh()

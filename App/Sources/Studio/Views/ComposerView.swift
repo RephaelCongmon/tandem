@@ -49,6 +49,7 @@ struct ComposerView: View {
                         .foregroundStyle(Theme.textTertiary)
                         .lineLimit(1)
                 }
+                ReasoningMenu()
             }
         }
         .padding(.horizontal, 14)
@@ -348,6 +349,57 @@ private struct MarkupEditorSheet: View {
                 return
             }
             chat.applyMarkup(to: id, rendered: encoded.data, width: encoded.width, height: encoded.height, markup: box)
+        }
+    }
+}
+
+/// The reasoning level for the next answers, under the message field. Only levels the current
+/// model supports are offered; models without reasoning show nothing.
+private struct ReasoningMenu: View {
+    @Environment(AppModel.self) private var model
+
+    var body: some View {
+        let settings = model.settings
+        let capabilities = ModelCatalog.capabilities(for: settings.currentModel, provider: settings.provider)
+        if let current = capabilities.resolvedEffort(settings.effort) {
+            Menu {
+                Picker("Reasoning", selection: Binding(get: { current }, set: { settings.effort = $0 })) {
+                    ForEach(capabilities.supportedEfforts) { effort in
+                        Text("\(effort.displayName) — \(effort.detail)").tag(effort)
+                    }
+                }
+                .pickerStyle(.inline)
+                .labelsHidden()
+            } label: {
+                HStack(spacing: 4) {
+                    Image(systemName: "brain")
+                    Text("Reasoning: \(current.displayName)")
+                    Image(systemName: "chevron.down").font(.system(size: 7, weight: .bold))
+                }
+                .font(TandemFont.caption.weight(.medium))
+                .foregroundStyle(Theme.textSecondary)
+                .padding(.horizontal, 8)
+                .padding(.vertical, 3)
+                .background(Capsule().fill(Color.primary.opacity(0.06)))
+                .contentShape(Capsule())
+            }
+            .menuStyle(.button)
+            .buttonStyle(.plain)
+            .menuIndicator(.hidden)
+            .fixedSize()
+            .help("How much the model thinks before answering. Applies from your next question.")
+        }
+    }
+}
+
+private extension ReasoningEffort {
+    var detail: String {
+        switch self {
+        case .low: return "quickest answers"
+        case .medium: return "a little more thought"
+        case .high: return "for tricky problems"
+        case .xhigh: return "for hard problems; slower"
+        case .max: return "slowest; uses the most tokens"
         }
     }
 }
