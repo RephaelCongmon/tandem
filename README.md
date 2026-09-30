@@ -176,6 +176,13 @@ Speech recognition uses [Parakeet TDT 0.6B v2](https://huggingface.co/nvidia/par
 Newest first. Each version is also published, with its download, on the repository's [Releases](https://github.com/RephaelCongmon/tandem/releases) page, and **Update Now** in the app installs it.
 
 <!-- update-log:start -->
+### 1.6.1 — September 30, 2026
+
+- **Deliberate pictures.** Sending a question, **Ask** or a skill no longer takes a screenshot. Only the pictures you pick go to the AI.
+- **Select region** (⇧⌘S) freezes a frame of the shared screen. Drag over what matters, then click **Add region**. The shared Mac sends just that region, at full quality, cropped from the frozen frame. **Retake** gets a new frame; **Cancel** adds nothing.
+- Select again to add several pictures. Remove one with ×, or click it to annotate, crop or redact. The picture chip switches between **Use on send** and **Excluded from send**; excluded pictures stay in the composer for later.
+- Both Macs need 1.6.1 to select regions.
+
 ### 1.5.2 — September 30, 2026
 
 - **The local network warning now works:** 1.5.1 checked the wrong address (your router, which macOS always allows), so it missed the block macOS can apply after an update. Tandem now checks a host macOS actually blocks, shows the banner with **Open Settings**, and reconnects by itself once you switch Tandem off and back on under Privacy & Security › Local Network.
