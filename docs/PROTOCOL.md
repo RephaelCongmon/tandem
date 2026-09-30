@@ -71,7 +71,8 @@ Audio is mono 16 kHz. Opus frames are 20 ms (32 kbps), and a packet carries five
 - `streamRequest`
 - `keyframeRequest`
 - `videoAck`
-- `snapshotRequest`, `snapshotHeader`, `snapshotUnchanged`, `snapshotFailed`, `discardRegionSelection {id}`
+- `snapshotRequest`, `snapshotHeader`, `snapshotUnchanged`, `snapshotFailed`
+- `releaseFrozenSnapshot {id}` (Studio → Source): region selection finished; free the held still (see below)
 - `sourceCatalogRequest`, `sourceCatalog`, `selectSource`
 - `automationStatus`
 - `replyMirror`
@@ -81,23 +82,19 @@ Audio is mono 16 kHz. Opus frames are 20 ms (32 kbps), and a packet carries five
 - `ping`/`pong` (NTP-style clock offset)
 - `goodbye`
 
-Unknown messages are ignored, so newer peers can add them. `hello.capabilities` advertises optional features: `"audio"` means the peer can send (Source) or transcribe (Studio) computer audio; `"update"` means a Source installs updates its Studio sends (after checking the version and the developer signature). A Studio uses it to tell the user that an older Source needs an update.
+Unknown messages are ignored, so newer peers can add them. `hello.capabilities` advertises optional features: `"audio"` means the peer can send (Source) or transcribe (Studio) computer audio; `"update"` means a Source installs updates its Studio sends (after checking the version and the developer signature). A Studio uses it to tell the user that an older Source needs an update. `"regions"` means a Source supports region snapshots.
 
-### Frozen region snapshots
+### Region snapshots
 
-The `regionSnapshots` capability enables deliberate region capture. The Studio first sends
-`snapshotRequest {prepareRegionSelection: true, maxDimension: 1600, ...}`. The Source captures
-a native frame and keeps one frame per viewer in memory for up to five minutes. Its response
-is a small selection preview, with the request ID as its token. This preview is never an AI attachment.
+The Studio selects regions on a frozen live view, and the Source sends only those regions, cropped from one native-resolution still. Nothing is captured when the user sends a question.
 
-After the user draws a rectangle, the Studio sends another `snapshotRequest` with
-`frozenSnapshotID` and `region {x, y, width, height}` in normalized top-left image coordinates.
-The Source crops the retained frame before scaling and JPEG encoding, and transfers only
-that region at full quality. The response keeps the original capture time. Invalid geometry,
-missing or expired tokens, source changes, and paused or locked sharing fail explicitly;
-they never fall back to a full-screen or newer capture. Cancellation sends
-`discardRegionSelection`, and a successful crop or disconnect also frees the frame.
-Older peers are asked to update before region selection is attempted.
+1. **Freeze.** The Studio stops showing new live frames (they are still acked) and sends `snapshotRequest {freeze: {displayedFrameNanos}}`, where `displayedFrameNanos` is the `capturedAtNanos` of the frame it holds. The Source captures a native still and keeps it in memory for this Studio (one per Studio, two minutes after last use).
+   - If no newer live frame was captured since `displayedFrameNanos`, the still shows exactly what the Studio holds. The Source replies `snapshotUnchanged {id}` and sends no image: the user can drag on the held frame immediately, before the reply arrives.
+   - Otherwise (the screen changed, or there was no live frame), it replies with a preview of the still (`maxDimension` of the request, JPEG) as an ordinary snapshot. The Studio shows it in place of the held frame, so the selection is always on the picture that gets cropped.
+2. **Crop.** For each region, `snapshotRequest {crop: {frozenID, region: {x, y, width, height}}}`, with the freeze request's `id` and a region normalized to 0…1 (top-left origin). The Source crops the held still before scaling to `maxDimension` and sends the result, keeping the still's capture time. Several crops can come from one freeze.
+3. **Release.** `releaseFrozenSnapshot {id}` frees the still. The Studio resumes its live view from a keyframe.
+
+A crop never falls back to a newer or full screen: an unknown or expired `frozenID`, a region outside the picture, or sharing paused, locked, interrupted or switched to another source fails with `snapshotFailed`. A Studio sends these requests only to Sources that advertise `"regions"` (older Sources would ignore the fields and send the whole screen); with an older Source it adds a whole-screen snapshot and suggests updating.
 
 ### Scheduling
 

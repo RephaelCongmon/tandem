@@ -102,12 +102,12 @@ struct TandemCommands: Commands {
         }
         CommandMenu("Capture") {
             if model.settings.role == .studio {
-                Button("Ask with Selected Pictures") { model.studio.captureAndAsk() }
+                Button("Ask About Selection") { model.studio.askAboutSelection() }
                     .keyboardShortcut(.return, modifiers: [.command, .shift])
-                    .disabled(!model.chat.canSendFromComposer)
-                Button("Select Region…") { model.studio.captureToComposer() }
+                    .disabled(!model.studio.isConnected || model.chat.isBusy)
+                Button(model.studio.regionSelection == nil ? "Select Region" : "Add Whole Screen") { model.studio.beginRegionSelection() }
                     .keyboardShortcut("s", modifiers: [.command, .shift])
-                    .disabled(!model.studio.canCapture || model.studio.isCapturing)
+                    .disabled(!model.studio.canCapture)
                 Divider()
                 Button(model.settings.autoCaptureEnabled ? "Turn Off Auto-Capture" : "Turn On Auto-Capture") {
                     model.studio.toggleAutoCapture()

@@ -29,9 +29,11 @@
 | `Core/Sources/TandemUI` | Design system, `MarkdownView`, snapshot markup editor + renderer, global hotkeys + recorder |
 | `App/Sources` | SwiftUI app: `AppModel`, `ConnectionManager`, `SourceEngine`, `StudioEngine`, `ChatController`, views, settings, menu bar, panels |
 
-## Deliberate picture selection
+## Selecting regions
 
-Questions and skills consume only selected composer pictures. Excluding pictures keeps them for later. The capture picker requests a small preview while the Source retains the native frame. After a drag and Add, a normalized region plus frozen-frame token requests a crop of the same pixels, at native resolution before provider scaling. Previews never enter the composer or AI context. Cancel, completion, disconnect, pause, interruption, source changes and expiry release retained frames. Legacy automatic-on-send preferences are ignored; explicit interval automation and Source pushes remain available.
+Questions and skills use only the pictures in the composer; nothing is captured on send. **Select Region** (`StudioEngine.beginRegionSelection`) freezes the live view in place: `LiveVideoRenderer.freeze()` stops feeding the display layer, which keeps its last frame, and returns that frame's Source capture time. Frames keep arriving and being acked, so leaving the selection only waits for one keyframe.
+
+The Studio then asks the Source to hold a native-resolution still (`SnapshotFreeze`). The Source replies `snapshotUnchanged` if it captured no live frame after the held one: the still shows the same screen, so no preview crosses the link, and the user can drag before the reply arrives (those drags are queued). If the screen changed, the Source sends a preview that replaces the held frame, so the user always selects on the picture that will be cropped. Each drag becomes a `SnapshotCrop` of the held still, cropped before scaling, so several full-resolution pictures come from one moment (`RegionSelectionOverlay`). The Source keeps one still per Studio, drops it on release, pause, lock, interruption, or a source or setting change, and never answers a crop with a newer or full screen. Interval automation and Source pushes still capture on their own, because the user turns those on explicitly.
 
 ## Threading model
 

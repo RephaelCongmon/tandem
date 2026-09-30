@@ -82,6 +82,7 @@ final class PeerConnection: Identifiable {
 
     /// The other Mac runs a version that can send (or receive) computer audio.
     var peerSupportsAudio: Bool { remoteHello?.capabilities.contains(PeerHello.Capability.audio) ?? false }
+    /// The other Mac holds a frozen still and sends regions of it.
     var peerSupportsRegionSnapshots: Bool { remoteHello?.capabilities.contains(PeerHello.Capability.regionSnapshots) ?? false }
 
     /// The other Mac installs updates this Mac sends it.

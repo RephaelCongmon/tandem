@@ -56,8 +56,8 @@ final class ChatController {
     var selectedThreadID: UUID?
     var composerText = ""
     private(set) var composerAttachments: [ComposerAttachment] = []
-    /// Per-question choice. Excluded pictures stay in the composer for later.
-    var useSelectedPictures = true
+    /// Whether sending (or a skill) uses the pictures in the composer. Off keeps them for later.
+    var includesPictures = true
     private(set) var streaming: StreamingReply?
     private(set) var isCapturingForSend = false
     /// Sending waits a moment for the transcript to catch up with the newest speech.
@@ -136,11 +136,7 @@ final class ChatController {
         }
     }
 
-    var isBusy: Bool { streaming != nil || isCapturingForSend || !applyingMarkup.isEmpty || (studio?.isCapturing ?? false) }
-    var canSendFromComposer: Bool {
-        !isBusy && (!composerText.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
-                    || (useSelectedPictures && !composerAttachments.isEmpty))
-    }
+    var isBusy: Bool { streaming != nil || isCapturingForSend || !applyingMarkup.isEmpty }
 
     /// Starts Claude Code ahead of the next question, so it doesn't wait for the CLI to launch.
     func prewarm() {
@@ -249,7 +245,7 @@ final class ChatController {
     func addToComposer(_ snapshot: ReceivedSnapshot, sourceName: String?, automatic: Bool = false) {
         let attachment = makeAttachment(from: snapshot, sourceName: sourceName)
         snapshots.put(snapshot.data, id: attachment.id)
-        if automatic { discardFromComposer { $0.isAutomatic } }
+        if automatic { discardFromComposer { $0.isAutomatic } } else { includesPictures = true }
         let thumb = ImageCodec.thumbnail(snapshot.data, maxPixelSize: 360).map { NSImage(cgImage: $0, size: .zero) } ?? NSImage()
         composerAttachments.append(ComposerAttachment(attachment: attachment, originalData: snapshot.data, markup: nil, thumbnail: thumb, isAutomatic: automatic))
         if composerAttachments.count > 8 {
@@ -314,12 +310,14 @@ final class ChatController {
 
     // MARK: Sending
 
-    /// Sends only text and pictures the user has already selected.
+    /// Sends the composer's text and the pictures you selected. Nothing is captured here:
+    /// the screen at the moment you press send may not show what you mean.
     func sendFromComposer() {
         send(skill: nil)
     }
 
-    /// Skills share the composer's deliberate picture selection and typed context.
+    /// Sends `skill` with the composer's pictures (when the skill uses pictures) and the
+    /// typed text as extra context.
     func send(skill: PromptSkill) {
         send(skill: Optional(skill))
     }
@@ -328,11 +326,11 @@ final class ChatController {
         guard !isBusy else { return }
         sendStartedAt = monotonicSeconds()
         let text = composerText.trimmingCharacters(in: .whitespacesAndNewlines)
-        let includesPictures = useSelectedPictures && (skill?.attachesScreenshot ?? true)
-        let attachments = includesPictures ? composerAttachments.map(\.attachment) : []
+        let usesPictures = includesPictures && (skill?.attachesScreenshot ?? true)
+        let attachments = usesPictures ? composerAttachments.map(\.attachment) : []
         guard !text.isEmpty || !attachments.isEmpty || skill != nil else { return }
         composerText = ""
-        if includesPictures { composerAttachments.removeAll() }
+        if usesPictures { composerAttachments.removeAll() }
         banner = nil
 
         // A question asked out loud a moment ago may still be being transcribed.

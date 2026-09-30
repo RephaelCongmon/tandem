@@ -351,12 +351,12 @@ private struct StudioSettings: View {
                     .font(TandemFont.caption).foregroundStyle(Theme.textSecondary)
             }
             Section("Asking") {
-                Text("Questions and skills use only the pictures selected in the composer. Choose Select region to add a picture, or turn off Use on send to keep it for later.")
+                Text("Questions include only pictures you select (Select Region, ⇧⌘S), never an automatic screenshot.")
                     .font(TandemFont.caption).foregroundStyle(Theme.textSecondary)
                 Picker("When the shared Mac sends a snapshot", selection: $settings.pushBehavior) {
                     ForEach(PushBehavior.allCases) { Text($0.title).tag($0) }
                 }
-                PromptEditor(title: "Prompt for snapshots without a note", text: $settings.pushPrompt)
+                PromptEditor(title: "Prompt for pictures sent without a question", text: $settings.pushPrompt)
                 Toggle("Show answers on the shared Mac too", isOn: $settings.mirrorReplies)
             }
             Section("Connection") {

@@ -2,8 +2,8 @@ import SwiftUI
 import TandemCore
 import TandemUI
 
-/// One-click skills above the message field. Each sends selected pictures, whatever is typed
-/// (as extra context) and the skill's instructions.
+/// One-click skills above the message field. Each sends the selected pictures, whatever is
+/// typed (as extra context) and the skill's instructions.
 struct SkillBar: View {
     @Environment(AppModel.self) private var model
 
@@ -113,7 +113,7 @@ struct SkillSettings: View {
             } header: {
                 Text("Skills")
             } footer: {
-                Text("Skills use your selected pictures (when Use on send is on), what was just said on the shared Mac (when Listen is on), anything you've typed as extra context, and the skill's instructions. They never take a new picture. In the thread you see just the skill's name. ⌘1–⌘9 send the first nine.")
+                Text("Skills are buttons above the message field. Each one sends the pictures you selected, what was just said on the shared Mac (when Listen is on), anything you've typed as extra context, and the skill's instructions. In the thread you see just the skill's name. ⌘1–⌘9 send the first nine.")
                     .font(TandemFont.caption)
                     .foregroundStyle(Theme.textSecondary)
             }
@@ -190,7 +190,7 @@ private struct SkillEditor: View {
                     .background(RoundedRectangle(cornerRadius: Radius.s, style: .continuous).fill(Theme.surfaceRaised))
                     .overlay(RoundedRectangle(cornerRadius: Radius.s, style: .continuous).strokeBorder(Theme.stroke))
             }
-            Toggle("Use selected pictures from the composer", isOn: $skill.attachesScreenshot)
+            Toggle("Include the pictures you selected", isOn: $skill.attachesScreenshot)
             Toggle("Include what was just said (when Listen is on)", isOn: $skill.attachesTranscript)
             HStack {
                 if !isNew {

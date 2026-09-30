@@ -21,6 +21,36 @@ enum SnapshotRequestError: Error, LocalizedError {
     }
 }
 
+/// Selecting regions on a frozen frame of the live view.
+struct RegionSelection {
+    enum Phase: Equatable {
+        /// Waiting for the Source to hold its native still.
+        case freezing
+        case ready
+        case failed(String)
+    }
+
+    /// The freeze request's id: the Source's handle for the held still.
+    let id: UUID
+    let connectionID: UUID
+    /// The live view holds the frame it showed, which the Source's still matches unless
+    /// the screen changed since.
+    var heldOnStage: Bool
+    /// Pixel size of what's shown, for mapping drags onto the picture.
+    var frameSize: CGSize
+    /// The Source's preview, shown instead when the screen changed after the held frame
+    /// (or when there was no live frame to hold).
+    var image: CGImage?
+    var phase: Phase = .freezing
+    /// Selections made on the local frame before the Source confirmed it matches.
+    var queued: [SnapshotRegion] = []
+    /// Everything picked from this freeze, outlined on the stage.
+    var picked: [SnapshotRegion] = []
+    var cropsInFlight = 0
+
+    var canSelect: Bool { heldOnStage || image != nil }
+}
+
 /// The Studio Mac: live view, snapshots, automation, the live transcript, and the chat.
 @MainActor
 @Observable
@@ -43,15 +73,7 @@ final class StudioEngine {
     private(set) var liveStats = LiveStats()
     private(set) var hasVideo = false
     private(set) var isCapturing = false
-    struct RegionSelection: Identifiable {
-        let id: UUID
-        let preview: ReceivedSnapshot
-        let connectionID: UUID
-        let sourceName: String?
-    }
-    var regionSelection: RegionSelection?
-    private(set) var regionSelectionError: String?
-    @ObservationIgnored private var selectionGeneration = UUID()
+    private(set) var regionSelection: RegionSelection?
     /// Snapshots pushed from the Source that are waiting in the composer.
     private(set) var lastPushAt: Date?
     var livePreviewEnabled = true { didSet { sendStreamRequest() } }
@@ -165,7 +187,6 @@ final class StudioEngine {
 
     func detach(_ connection: PeerConnection) {
         guard self.connection?.id == connection.id else { return }
-        cancelRegionSelection()
         sharedMacUpdater.sourceDisconnected(connection)
         connection.videoSink.value = nil
         connection.audioSink.value = nil
@@ -180,6 +201,7 @@ final class StudioEngine {
         hasVideo = false
         liveStats = LiveStats()
         renderer.reset()
+        regionSelection = nil
         for id in Array(pending.keys) { resolve(id, with: .failure(SnapshotRequestError.notConnected)) }
         restartAutomation()
     }
@@ -190,6 +212,11 @@ final class StudioEngine {
         switch message {
         case .sourceStatus(let status):
             let wasLive = sourceStatus?.state == .live
+            // The Source dropped its held still: paused, or sharing something else now.
+            if regionSelection != nil, (status.state != .live && status.state != .starting)
+                || status.capture?.source != sourceStatus?.capture?.source {
+                endRegionSelection()
+            }
             sourceStatus = status
             if status.state != .live, status.state != .starting {
                 hasVideo = false
@@ -298,6 +325,7 @@ final class StudioEngine {
         let enabled = wantsLiveVideo
         connection.send(.control(.streamRequest(StreamRequest(enabled: enabled, quality: settings.liveQuality.quality))))
         if !enabled {
+            endRegionSelection()
             hasVideo = false
             renderer.reset()
         }
@@ -319,26 +347,20 @@ final class StudioEngine {
 
     /// Asks the Source for a fresh still. Throws `SnapshotRequestError.unchanged`
     /// when `skipIfUnchangedBelow` is set and the screen didn't change.
-    func requestSnapshot(trigger: SnapshotTrigger, skipIfUnchangedBelow: Double? = nil, prepareRegionSelection: Bool = false, region: SnapshotRegion? = nil, frozenSnapshotID: UUID? = nil) async throws -> ReceivedSnapshot {
+    func requestSnapshot(trigger: SnapshotTrigger, skipIfUnchangedBelow: Double? = nil) async throws -> ReceivedSnapshot {
+        try await send(SnapshotRequest(trigger: trigger, maxDimension: attachmentMaxDimension, quality: 0.9, skipIfUnchangedBelow: skipIfUnchangedBelow))
+    }
+
+    /// Pictures for the AI: as large as the current model reads them.
+    private var attachmentMaxDimension: Int {
+        min(ModelCatalog.capabilities(for: settings.currentModel, provider: settings.provider).maxImageLongEdge, 2576)
+    }
+
+    private func send(_ request: SnapshotRequest) async throws -> ReceivedSnapshot {
         guard let connection, connection.isConnected else { throw SnapshotRequestError.notConnected }
-        if prepareRegionSelection || region != nil {
-            guard connection.peerSupportsRegionSnapshots else {
-                throw SnapshotRequestError.failed("Update Tandem on the shared Mac to select regions.")
-            }
-        }
         if let status = sourceStatus, status.state != .live, status.state != .starting {
             throw SnapshotRequestError.sourceUnavailable(status.message ?? "The other Mac isn't sharing right now.")
         }
-        let capabilities = ModelCatalog.capabilities(for: settings.currentModel, provider: settings.provider)
-        let request = SnapshotRequest(
-            trigger: trigger,
-            maxDimension: prepareRegionSelection ? 1600 : min(capabilities.maxImageLongEdge, 2576),
-            quality: prepareRegionSelection ? 0.8 : 0.9,
-            skipIfUnchangedBelow: skipIfUnchangedBelow,
-            prepareRegionSelection: prepareRegionSelection ? true : nil,
-            region: region,
-            frozenSnapshotID: frozenSnapshotID
-        )
         // Idle timeout: extended whenever chunks arrive (see onSnapshotProgress).
         let timeout: Double = connection.linkKind.isConstrained ? 30 : 12
         isCapturing = true
@@ -368,61 +390,149 @@ final class StudioEngine {
         entry.continuation.resume(with: result)
     }
 
-    /// Ask using deliberately selected pictures and the text already in the composer.
-    func captureAndAsk() {
+    /// Ask button / hotkey: asks about the pictures you selected and anything typed. With
+    /// nothing to ask about yet, starts selecting instead of grabbing the screen.
+    /// Returns false when it started a selection instead.
+    @discardableResult
+    func askAboutSelection() -> Bool {
+        guard !chat.isBusy else { return true }
+        let typed = chat.composerText.trimmingCharacters(in: .whitespacesAndNewlines)
+        let hasPictures = chat.includesPictures && !chat.composerAttachments.isEmpty
+        guard hasPictures || !typed.isEmpty else {
+            beginRegionSelection()
+            return false
+        }
+        if typed.isEmpty { chat.composerText = settings.pushPrompt }
         chat.sendFromComposer()
+        return true
     }
 
-    /// Freeze a preview; nothing is attached until the user draws and adds a region.
-    func captureToComposer() {
-        guard canCapture, !isCapturing else { return }
-        let generation = UUID()
-        selectionGeneration = generation
-        let sessionID = regionSelection?.id ?? UUID()
-        regionSelectionError = nil
-        let connectionID = connection?.id
-        let name = sourceName
+    // MARK: Region selection
+
+    /// Freezes the live view for dragging out regions. While selecting, calling it again
+    /// adds the whole frozen frame.
+    func beginRegionSelection() {
+        if regionSelection != nil {
+            addRegion(.full)
+            return
+        }
+        guard let connection, connection.isConnected, canCapture else {
+            chat.reportBanner("Couldn't capture: the shared Mac isn't sharing right now.")
+            return
+        }
+        guard connection.peerSupportsRegionSnapshots else {
+            // An older shared Mac sends only whole screens: still a deliberate pick.
+            chat.reportBanner("Update Tandem on \(sourceName ?? "the shared Mac") to select regions. Added the whole screen for now.")
+            captureWholeScreenToComposer()
+            return
+        }
+        if !settings.showStage { settings.showStage = true }
+        let started = monotonicSeconds()
+        let held = liveState == .live ? renderer.freeze() : nil
+        let selection = RegionSelection(id: UUID(), connectionID: connection.id, heldOnStage: held != nil,
+                                        frameSize: CGSize(width: held?.width ?? 0, height: held?.height ?? 0))
+        regionSelection = selection
+        let log = self.log
+        let elapsed = { Int((monotonicSeconds() - started) * 1000) }
+        log.notice("TANDEM-TIMING region held on stage=\(held != nil, privacy: .public) after \(elapsed(), privacy: .public) ms")
+        let request = SnapshotRequest(
+            id: selection.id, trigger: .manual,
+            maxDimension: connection.linkKind.isConstrained ? 960 : 1600, quality: 0.8,
+            freeze: SnapshotFreeze(displayedFrameNanos: held?.capturedAtNanos)
+        )
         Task {
             do {
-                let preview = try await requestSnapshot(trigger: .manual, prepareRegionSelection: true)
-                guard selectionGeneration == generation, let connectionID, connection?.id == connectionID else {
-                    if connection?.id == connectionID { connection?.send(.control(.discardRegionSelection(id: preview.header.id))) }
+                let snapshot = try await send(request)
+                // The screen changed after the frozen frame: select on the Source's picture.
+                let image = await Task.detached(priority: .userInitiated) { ImageCodec.decode(snapshot.data) }.value
+                guard regionSelection?.id == selection.id else { return releaseFrozenStill(selection) }
+                guard let image else {
+                    regionSelection?.phase = .failed("Couldn't read the picture from the shared Mac.")
                     return
                 }
-                regionSelection = RegionSelection(id: sessionID, preview: preview, connectionID: connectionID, sourceName: name)
+                log.notice("TANDEM-TIMING region ready (Source preview, \(snapshot.data.count, privacy: .public) bytes) after \(elapsed(), privacy: .public) ms")
+                let redo = !(regionSelection?.queued.isEmpty ?? true)
+                regionSelection?.image = image
+                regionSelection?.frameSize = CGSize(width: image.width, height: image.height)
+                regionSelection?.queued.removeAll()
+                regionSelection?.picked.removeAll()
+                regionSelection?.phase = .ready
+                if redo { chat.reportBanner("The shared screen changed while freezing. Select again on the updated picture.") }
+            } catch SnapshotRequestError.unchanged {
+                // The frozen frame shows exactly what the Source holds.
+                log.notice("TANDEM-TIMING region ready (frozen frame matched, 0 bytes) after \(elapsed(), privacy: .public) ms")
+                guard var current = regionSelection, current.id == selection.id else { return releaseFrozenStill(selection) }
+                let queued = current.queued
+                current.queued.removeAll()
+                current.phase = .ready
+                regionSelection = current
+                for region in queued { requestCrop(region, from: current) }
             } catch {
-                guard selectionGeneration == generation else { return }
-                regionSelectionError = error.localizedDescription
-                if regionSelection == nil {
-                    chat.reportBanner("Couldn't capture: \(error.localizedDescription)")
-                }
+                guard regionSelection?.id == selection.id else { return }
+                regionSelection?.phase = .failed(error.localizedDescription)
             }
         }
     }
 
-    func cancelRegionSelection() {
-        if let selection = regionSelection, connection?.id == selection.connectionID {
-            connection?.send(.control(.discardRegionSelection(id: selection.preview.header.id)))
+    /// Adds a region of the frozen frame to the composer (requested once the Source holds it).
+    func addRegion(_ region: SnapshotRegion) {
+        guard var selection = regionSelection, selection.canSelect else { return }
+        switch selection.phase {
+        case .freezing:
+            selection.queued.append(region)
+            selection.picked.append(region)
+            regionSelection = selection
+        case .ready:
+            selection.picked.append(region)
+            regionSelection = selection
+            requestCrop(region, from: selection)
+        case .failed:
+            break
         }
-        selectionGeneration = UUID()
-        regionSelection = nil
-        regionSelectionError = nil
     }
 
-    func addSelectedRegion(_ region: SnapshotRegion) {
-        guard let selection = regionSelection, !isCapturing else { return }
-        let generation = selectionGeneration
-        regionSelectionError = nil
+    /// Back to the live view. Crops already requested still arrive.
+    func endRegionSelection() {
+        guard let selection = regionSelection else { return }
+        regionSelection = nil
+        if renderer.unfreeze() { connection?.send(.control(.keyframeRequest)) }
+        releaseFrozenStill(selection)
+    }
+
+    private func releaseFrozenStill(_ selection: RegionSelection) {
+        guard let connection, connection.id == selection.connectionID, connection.isConnected else { return }
+        connection.send(.control(.releaseFrozenSnapshot(id: selection.id)))
+    }
+
+    private func requestCrop(_ region: SnapshotRegion, from selection: RegionSelection) {
+        regionSelection?.cropsInFlight += 1
+        let request = SnapshotRequest(trigger: .manual, maxDimension: attachmentMaxDimension, quality: 0.9,
+                                      crop: SnapshotCrop(frozenID: selection.id, region: region))
+        let started = monotonicSeconds()
+        Task {
+            defer { if regionSelection?.id == selection.id { regionSelection?.cropsInFlight -= 1 } }
+            do {
+                let snapshot = try await send(request)
+                log.notice("TANDEM-TIMING region crop \(snapshot.header.pixelWidth, privacy: .public)x\(snapshot.header.pixelHeight, privacy: .public) (\(snapshot.data.count, privacy: .public) bytes) after \(Int((monotonicSeconds() - started) * 1000), privacy: .public) ms")
+                guard connection?.id == selection.connectionID else { return }
+                chat.addToComposer(snapshot, sourceName: sourceName)
+            } catch {
+                if regionSelection?.id == selection.id, let index = regionSelection?.picked.firstIndex(of: region) {
+                    regionSelection?.picked.remove(at: index)
+                }
+                chat.reportBanner("Couldn't add the region: \(error.localizedDescription)")
+            }
+        }
+    }
+
+    /// The whole screen, for a shared Mac without region support.
+    private func captureWholeScreenToComposer() {
         Task {
             do {
-                guard connection?.id == selection.connectionID else { throw SnapshotRequestError.notConnected }
-                let snapshot = try await requestSnapshot(trigger: .manual, region: region, frozenSnapshotID: selection.preview.header.id)
-                guard selectionGeneration == generation, connection?.id == selection.connectionID else { return }
-                chat.addToComposer(snapshot, sourceName: selection.sourceName)
-                cancelRegionSelection()
+                let snapshot = try await requestSnapshot(trigger: .manual)
+                chat.addToComposer(snapshot, sourceName: sourceName)
             } catch {
-                guard selectionGeneration == generation else { return }
-                regionSelectionError = error.localizedDescription
+                chat.reportBanner("Couldn't capture: \(error.localizedDescription)")
             }
         }
     }

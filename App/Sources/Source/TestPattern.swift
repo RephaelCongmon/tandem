@@ -10,6 +10,8 @@ import TandemCore
 final class TestPatternGenerator: @unchecked Sendable {
     static let sourceID = CaptureSourceID(kind: .display, id: "tandem-test-pattern")
     static let descriptor = CaptureSourceDescriptor(source: sourceID, title: "Test Pattern (Debug)", subtitle: "Synthetic", pixelWidth: 1920, pixelHeight: 1080)
+    /// `TANDEM_TEST_PATTERN_STATIC=1`: one unchanging frame, like an idle screen.
+    static let isStatic = ProcessInfo.processInfo.environment["TANDEM_TEST_PATTERN_STATIC"] == "1"
 
     private let queue: DispatchQueue
     private var timer: DispatchSourceTimer?
@@ -35,6 +37,10 @@ final class TestPatternGenerator: @unchecked Sendable {
     }
 
     func start(fps: Int) {
+        if Self.isStatic {
+            queue.async { [weak self] in self?.emit() }
+            return
+        }
         let timer = DispatchSource.makeTimerSource(queue: queue)
         timer.schedule(deadline: .now(), repeating: 1.0 / Double(max(1, fps)), leeway: .milliseconds(2))
         timer.setEventHandler { [weak self] in self?.emit() }
@@ -60,7 +66,7 @@ final class TestPatternGenerator: @unchecked Sendable {
             bytesPerRow: CVPixelBufferGetBytesPerRow(buffer), space: ImageCodec.srgb,
             bitmapInfo: CGImageAlphaInfo.premultipliedFirst.rawValue | CGBitmapInfo.byteOrder32Little.rawValue
            ) {
-            Self.draw(in: context, width: width, height: height, frame: frameIndex)
+            Self.draw(in: context, width: width, height: height, frame: Self.isStatic ? 0 : frameIndex)
         }
         CVPixelBufferUnlockBaseAddress(buffer, [])
 
@@ -79,7 +85,7 @@ final class TestPatternGenerator: @unchecked Sendable {
         let height = 1080
         guard let context = CGContext(data: nil, width: width, height: height, bitsPerComponent: 8, bytesPerRow: 0, space: ImageCodec.srgb,
                                       bitmapInfo: CGImageAlphaInfo.premultipliedFirst.rawValue | CGBitmapInfo.byteOrder32Little.rawValue) else { return nil }
-        draw(in: context, width: width, height: height, frame: Int(Date().timeIntervalSince1970 * 60))
+        draw(in: context, width: width, height: height, frame: isStatic ? 0 : Int(Date().timeIntervalSince1970 * 60))
         return context.makeImage().map { ImageCodec.scaled($0, maxDimension: maxDimension) }
     }
 
@@ -106,7 +112,7 @@ final class TestPatternGenerator: @unchecked Sendable {
         formatter.dateFormat = "HH:mm:ss.SSS"
         let lines = [
             ("Tandem test pattern", h * 0.05, NSColor.white.withAlphaComponent(0.7)),
-            (formatter.string(from: Date()), h * 0.14, NSColor.white),
+            (isStatic ? "static screen" : formatter.string(from: Date()), h * 0.14, NSColor.white),
             ("frame \(frame)", h * 0.04, NSColor.white.withAlphaComponent(0.6))
         ]
         NSGraphicsContext.saveGraphicsState()

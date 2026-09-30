@@ -58,14 +58,18 @@ final class HotkeyController {
                 systemImage: model.source.isSharingEnabled ? "play.circle.fill" : "pause.circle.fill"
             )
         case .captureAndAsk:
-            if model.chat.canSendFromComposer {
-                model.studio.captureAndAsk()
-                model.toasts.show("Asking…", systemImage: "sparkles")
+            if !model.studio.isConnected {
+                model.toasts.show("No shared Mac connected", systemImage: "exclamationmark.triangle.fill", style: .warning)
+            } else if model.chat.isBusy {
+                model.toasts.show("Still answering the previous question", systemImage: "hourglass", style: .warning)
+            } else if model.studio.askAboutSelection() {
+                model.toasts.show("Asking about your selection…", systemImage: "sparkles")
             } else {
-                model.toasts.show("Add a question or select a picture first", systemImage: "exclamationmark.triangle.fill", style: .warning)
+                model.showMainWindow()
+                model.toasts.show("Drag on the frozen view to pick what to ask about", systemImage: "rectangle.dashed")
             }
         case .captureToComposer:
-            model.studio.captureToComposer()
+            model.studio.beginRegionSelection()
             model.showMainWindow()
         case .toggleAutoCapture:
             model.studio.toggleAutoCapture()

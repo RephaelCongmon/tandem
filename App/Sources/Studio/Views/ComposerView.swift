@@ -22,7 +22,6 @@ struct ComposerView: View {
 
     var body: some View {
         @Bindable var chat = model.chat
-        @Bindable var studio = model.studio
         VStack(alignment: .leading, spacing: 8) {
             if !chat.composerAttachments.isEmpty || model.studio.isConnected {
                 attachmentsRow
@@ -67,10 +66,6 @@ struct ComposerView: View {
             MarkupEditorSheet(attachment: attachment)
                 .environment(model)
         }
-        .sheet(item: $studio.regionSelection, onDismiss: { model.studio.cancelRegionSelection() }) { selection in
-            RegionCaptureSheet(selection: selection)
-                .environment(model)
-        }
         .onAppear { focused = true }
         .onChange(of: model.chat.editRequest) { _, id in
             guard let id else { return }
@@ -96,7 +91,9 @@ struct ComposerView: View {
     }
 
     private var canSend: Bool {
-        model.chat.canSendFromComposer
+        let chat = model.chat
+        let hasText = !chat.composerText.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+        return !chat.isBusy && (hasText || (chat.includesPictures && !chat.composerAttachments.isEmpty))
     }
 
     private func send() {
@@ -110,10 +107,12 @@ struct ComposerView: View {
         @Bindable var chat = model.chat
         return ScrollView(.horizontal, showsIndicators: false) {
             HStack(spacing: 8) {
-                if !chat.composerAttachments.isEmpty {
-                    SelectedPicturesChip(isOn: $chat.useSelectedPictures, count: chat.composerAttachments.count)
+                if model.studio.isConnected {
+                    ListenToggleChip()
                 }
-                if model.studio.isConnected { ListenToggleChip() }
+                if !chat.composerAttachments.isEmpty {
+                    PicturesToggleChip(isOn: $chat.includesPictures, count: chat.composerAttachments.count)
+                }
                 ForEach(chat.composerAttachments) { item in
                     ComposerThumbnail(item: item) {
                         chat.beginEditing(item.id)
@@ -121,21 +120,21 @@ struct ComposerView: View {
                     } onRemove: {
                         chat.removeFromComposer(item.id)
                     }
+                    .opacity(chat.includesPictures ? 1 : 0.45)
                 }
                 if model.studio.isConnected {
                     Button {
-                        model.studio.captureToComposer()
+                        model.studio.beginRegionSelection()
                     } label: {
-                        Label("Select region", systemImage: model.studio.isCapturing ? "hourglass" : "rectangle.dashed")
+                        Image(systemName: model.studio.isCapturing ? "hourglass" : "rectangle.dashed")
                             .font(.system(size: 14, weight: .semibold))
                             .foregroundStyle(Theme.textSecondary)
-                            .padding(.horizontal, 10)
-                            .frame(height: 40)
+                            .frame(width: 40, height: 40)
                             .background(RoundedRectangle(cornerRadius: Radius.s, style: .continuous).strokeBorder(Theme.strokeStrong, style: StrokeStyle(lineWidth: 1, dash: [4, 3])))
                     }
                     .buttonStyle(.plain)
-                    .disabled(!model.studio.canCapture || model.studio.isCapturing)
-                    .help("Freeze a frame, then drag to select a picture (⇧⌘S)")
+                    .disabled(!model.studio.canCapture)
+                    .help("Select a region of the shared screen (⇧⌘S)")
                 }
             }
             .padding(.vertical, 2)
@@ -229,7 +228,8 @@ struct ComposerView: View {
     }
 }
 
-private struct SelectedPicturesChip: View {
+/// Whether the next question (or skill) uses the selected pictures.
+private struct PicturesToggleChip: View {
     @Binding var isOn: Bool
     let count: Int
 
@@ -241,8 +241,8 @@ private struct SelectedPicturesChip: View {
                 Image(systemName: isOn ? "checkmark.circle.fill" : "circle.dashed")
                     .foregroundStyle(isOn ? Theme.accent : Theme.textTertiary)
                 VStack(alignment: .leading, spacing: 0) {
-                    Text("\(count) picture\(count == 1 ? "" : "s")").font(.system(size: 11.5, weight: .semibold))
-                    Text(isOn ? "Use on send" : "Excluded from send").font(TandemFont.micro).foregroundStyle(Theme.textTertiary)
+                    Text(count == 1 ? "1 picture" : "\(count) pictures").font(.system(size: 11.5, weight: .semibold))
+                    Text(isOn ? "Included" : "Kept for later").font(TandemFont.micro).foregroundStyle(Theme.textTertiary)
                 }
             }
             .padding(.horizontal, 10)
@@ -251,7 +251,7 @@ private struct SelectedPicturesChip: View {
             .overlay(RoundedRectangle(cornerRadius: Radius.s, style: .continuous).strokeBorder(isOn ? Theme.accent.opacity(0.35) : Theme.stroke, lineWidth: 1))
         }
         .buttonStyle(.plain)
-        .help(isOn ? "Send these selected pictures with your next question or skill" : "These pictures stay here for later; the next question sends without them")
+        .help(isOn ? "Sent with your next question or skill. Click to keep them for later instead." : "Not sent with your next question. Click to include them.")
     }
 }
 

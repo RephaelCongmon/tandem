@@ -507,8 +507,8 @@ public enum HotkeyAction: String, CaseIterable, Codable, Sendable, Identifiable 
         case .sendSnapshot: return "Send snapshot"
         case .sendSnapshotWithNote: return "Send snapshot with note…"
         case .pauseSharing: return "Pause sharing"
-        case .captureAndAsk: return "Ask with selected pictures"
-        case .captureToComposer: return "Select region"
+        case .captureAndAsk: return "Ask about selection"
+        case .captureToComposer: return "Select a region"
         case .toggleAutoCapture: return "Toggle auto-capture"
         case .answerFollowUp: return "Answer the follow-up"
         case .toggleListening: return "Listen to the shared Mac"
@@ -526,9 +526,9 @@ public enum HotkeyAction: String, CaseIterable, Codable, Sendable, Identifiable 
         case .pauseSharing:
             return "Pauses or resumes sharing your screen with the studio."
         case .captureAndAsk:
-            return "Captures the live screen and asks the assistant about it."
+            return "Asks about the pictures you selected. With none yet, freezes the live view so you can pick one."
         case .captureToComposer:
-            return "Attaches a capture of the live screen to the message you're writing."
+            return "Freezes the live view so you can drag out the part to ask about."
         case .toggleAutoCapture:
             return "Turns automatic capturing of the live screen on or off."
         case .answerFollowUp:

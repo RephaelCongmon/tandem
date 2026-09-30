@@ -1,15 +1,15 @@
 import Foundation
 
-/// A one-click instruction set for a kind of question (e.g. "Debug"), sent with selected
-/// pictures, the latest audio transcript and anything the user typed. The thread shows the
-/// skill's name; the model gets its full instructions.
+/// A one-click instruction set for a kind of question (e.g. "Debug"), sent with the pictures
+/// the user selected, the latest audio transcript and anything the user typed. The thread
+/// shows the skill's name; the model gets its full instructions.
 public struct PromptSkill: Codable, Sendable, Hashable, Identifiable {
     public var id: UUID
     public var title: String
     /// SF Symbol name.
     public var symbol: String
     public var instructions: String
-    /// Include selected composer pictures when the user has enabled them for this question.
+    /// Include the pictures selected in the composer (the stored name predates selection).
     public var attachesScreenshot: Bool
     /// Attach what was said on the shared Mac's audio since the last message (when listening).
     public var attachesTranscript: Bool

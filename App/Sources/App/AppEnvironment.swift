@@ -90,9 +90,19 @@ enum AppEnvironment {
     /// Development-only: the Studio pairs with the first Source it discovers.
     static var autoPair: Bool {
         #if DEBUG
-        return UserDefaults.standard.bool(forKey: "TandemAutoPair")
+        return UserDefaults.standard.bool(forKey: "TandemAutoPair") || autoPairName != nil
         #else
         return false
+        #endif
+    }
+
+    /// Development-only: auto-pair only with the Source of this name, for several dev
+    /// pairs on one Mac (`-TandemAutoPairName "QA Source"`, with `-deviceName` on the Source).
+    static var autoPairName: String? {
+        #if DEBUG
+        return UserDefaults.standard.string(forKey: "TandemAutoPairName")
+        #else
+        return nil
         #endif
     }
 

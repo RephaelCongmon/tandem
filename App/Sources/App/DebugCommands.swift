@@ -43,14 +43,22 @@ enum DebugCommands {
         case "ask":
             model.chat.composerText = argument
             model.chat.sendFromComposer()
-        case "captureAndAsk":
-            model.studio.captureAndAsk()
-        case "captureToComposer":
-            model.studio.captureToComposer()
-        case "connectNamedSource":
-            if let peer = model.connections.nearby.first(where: { $0.name == argument }) {
-                model.connections.connect(to: peer.id)
-            }
+        case "captureAndAsk", "askAboutSelection":
+            model.studio.askAboutSelection()
+        case "captureToComposer", "selectRegion":
+            model.studio.beginRegionSelection()
+        case "region":
+            // "x y width height", normalized; empty = the whole frame.
+            let values = argument.split(separator: " ").compactMap { Double($0) }
+            model.studio.addRegion(values.count == 4 ? SnapshotRegion(x: values[0], y: values[1], width: values[2], height: values[3]) : .full)
+        case "endSelection":
+            model.studio.endRegionSelection()
+        case "includePictures":
+            model.chat.includesPictures = argument != "off"
+        case "regionState":
+            let selection = model.studio.regionSelection
+            let logger = Logger(subsystem: "com.rofel.tandem", category: "Debug")
+            logger.notice("TANDEM-REGION phase=\(selection.map { String(describing: $0.phase) } ?? "none", privacy: .public) held=\(selection?.heldOnStage ?? false, privacy: .public) frame=\(selection.map { "\(Int($0.frameSize.width))x\(Int($0.frameSize.height))" } ?? "-", privacy: .public) image=\(selection?.image.map { "\($0.width)x\($0.height)" } ?? "-", privacy: .public) picked=\(selection?.picked.count ?? 0, privacy: .public) queued=\(selection?.queued.count ?? 0, privacy: .public) inFlight=\(selection?.cropsInFlight ?? 0, privacy: .public) composer=\(model.chat.composerAttachments.map { "\($0.attachment.pixelWidth)x\($0.attachment.pixelHeight)" }, privacy: .public) include=\(model.chat.includesPictures, privacy: .public)")
         case "editFirstAttachment":
             model.chat.editRequest = model.chat.composerAttachments.first?.id
         case "push":
@@ -198,7 +206,7 @@ enum DebugCommands {
         let studio = model.studio
         let source = model.source
         var lines: [String] = []
-        lines.append("role=\(model.settings.role?.rawValue ?? "nil")")
+        lines.append("role=\(model.settings.role?.rawValue ?? "nil") ai=\(model.settings.provider.rawValue):\(model.settings.currentModel) debugURL=\(AppEnvironment.debugAIBaseURL?.absoluteString ?? "-")")
         lines.append("connections=\(model.connections.connections.map { "\($0.peer?.name ?? "?"):\($0.phase):\($0.linkKind.rawValue):rtt=\($0.stats.rttMillis ?? -1)" })")
         lines.append("studio.isConnected=\(studio.isConnected) liveState=\(studio.liveState) hasVideo=\(studio.hasVideo) stageVisible=\(studio.isStageVisible) preview=\(studio.livePreviewEnabled)")
         lines.append("studio.sourceStatus=\(String(describing: studio.sourceStatus))")
@@ -208,8 +216,6 @@ enum DebugCommands {
         lines.append("source.screenPermission=\(source.hasScreenPermission) preflight=\(CGPreflightScreenCaptureAccess())")
         lines.append("source.audio=\(source.audioState) listeners=\(source.audioListenerIDs.count) requests=\(source.viewers.map { String(describing: $0.audioRequest) })")
         lines.append("chat.threads=\(model.chat.threads.count) streaming=\(model.chat.streaming != nil) banner=\(model.chat.banner ?? "-")")
-        lines.append("chat.pictures=\(model.chat.composerAttachments.map { "\($0.id):\($0.attachment.pixelWidth)x\($0.attachment.pixelHeight):\($0.attachment.capturedAt.timeIntervalSince1970)" }) use=\(model.chat.useSelectedPictures)")
-        lines.append("studio.selection=\(studio.regionSelection.map { "\($0.preview.header.id):\($0.preview.header.capturedAt.timeIntervalSince1970)" } ?? "-") capturing=\(studio.isCapturing)")
         lines.append("auto=\(model.settings.autoCaptureEnabled) last=\(studio.lastAutoResult ?? "-")")
         lines.append("network.blocked=\(model.connections.localNetworkBlocked) failure=\(model.connections.lastFailure?.message ?? "-")")
         // Logged (not written to the container) so tools can read it without

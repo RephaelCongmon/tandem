@@ -7,14 +7,14 @@ scripts/test_all.sh
 ```
 
 It runs:
-- **424 core/UI tests** (plus opt-in live checks). Wire codec, secure handshake (including man-in-the-middle, tamper and replay), real-TCP loopback sessions, H.264 encode→decode, image codec, context building, stores, AI clients against recorded streams, Markdown, Bluetooth stream transport, markup renderer and editor, hotkeys.
+- **429 core and UI tests** (plus opt-in live checks). Wire codec, secure handshake (including man-in-the-middle, tamper and replay), real-TCP loopback sessions, H.264 encode→decode, image codec, context building, stores, AI clients against recorded streams, Markdown, Bluetooth stream transport, markup renderer and editor, hotkeys.
   - Listening: audio messages on the wire, Opus and PCM round trips, packetizing, gain and levels, the audio timeline, transcript excerpts and their context text, skills that carry transcripts, and a **live on-device transcription** of a sentence spoken by `say`, streamed in 100 ms chunks (macOS 26; the SFSpeechRecognizer variant runs only where that permission was granted).
   - Parakeet: the utterance segmenter (captions while speaking, finishing at pauses, cutting long speech in its quietest moment, ignoring clicks and hum), and a live Parakeet transcription of two spoken questions (`TANDEM_PARAKEET_MODELS`; `scripts/test_all.sh` sets it when the app's model is downloaded). The Hugging Face fallback download is opt-in with `TANDEM_PARAKEET_DOWNLOAD_TEST=1`.
   - Updates between the Macs: the new messages on the wire, and the package assembler (intact, damaged, oversized and foreign packages).
   - Codex: launch arguments (only known features, MCP servers from config), sign-in parsing (never keeps an API key), error mapping. The client is tested against a stand-in `codex app-server` (Python): streaming, safety parameters, screenshots as files removed afterwards, thread reuse and folding, failures, declined approvals, interrupt on Stop, and the model list. `TANDEM_LIVE_CODEX=1 swift test --filter CodexLiveTests` asks the real Codex twice in one thread and checks it remembers.
   - The Claude Code client is tested against recorded CLI output and a fake `claude` script: streaming, stdin contents, errors, a CLI that quits without reading, cancellation, idle timeout, and live sessions (a follow-up reuses the process and sends only the new message; a changed history starts over; the spare process; a failed answer isn't kept).
   - `TANDEM_LIVE_CLAUDE=1 swift test --filter AIClaudeCodeLiveTests` (in `Core/`) checks the real installed CLI's version and sign-in.
-- **19 app tests.** Chat streaming, failure/retry, stop, snapshots, busy handling, settings persistence, hotkey overrides, converting ScreenCaptureKit audio buffers, and transcripts attached to questions (Follow-up carries the spoken question, then only newer speech; nothing when Listen or the setting is off).
+- **18 app tests.** Chat streaming, failure/retry, stop, snapshots, busy handling, settings persistence, hotkey overrides, converting ScreenCaptureKit audio buffers, and transcripts attached to questions (Follow-up carries the spoken question, then only newer speech; nothing when Listen or the setting is off).
 - **An app build** that fails on any warning.
 
 ## One-Mac end-to-end (what was verified during development)
@@ -22,7 +22,6 @@ It runs:
 `scripts/dev-two-macs.sh --mock-ai` starts a Source (profile A) and a Studio (profile B) with a synthetic test pattern and a mock Claude API. Drive them with `swift scripts/debug-command.swift <profile> <command>` and inspect state with `… dump` plus `/usr/bin/log show --predicate 'category == "Debug"'`.
 
 Verified this way:
-- deliberate region selection: Add is disabled before a drag; Cancel leaves the composer unchanged; Retake changes the preview; the returned crop retains the frozen timestamp even as the live screen changes; multiple selected regions coexist; excluded pictures stay in the composer and a skill sends zero images; including them sends exactly those two crops; pause/resume invalidates an old selection and Retake recovers;
 - auto-pairing over Bonjour (6-digit code sheets on both sides; codes match);
 - session reconnect after restarts and after a hard kill of either side, with no prompt, window or focus change on the Source;
 - a Source opened at login (`-TandemSimulateLoginLaunch YES`, launched with `open -g`) staying window-less while it pairs, reconnects and answers captures, and its window opening from the Dock or menu bar afterwards;
@@ -31,6 +30,9 @@ Verified this way:
 - stream pausing while the Studio window is hidden and resuming when it's visible;
 - the Debug and Follow-up skills through Claude Code: each answer followed its skill's instructions, and the typed text arrived as extra context;
 - asking through the real Claude Code CLI on a subscription, with a follow-up question that relies on the earlier answer and screenshot;
+- region selection on a static screen (`TANDEM_TEST_PATTERN_STATIC=1`): the live view froze at once, the Source confirmed its still matched with no preview, a drag made before that confirmation was queued, and two crops (768×324 and the whole 1920×1080 frame) arrived in 16–42 ms; Done resumed the live view from one keyframe; pausing the Source mid-selection ended it;
+- region selection on the animated pattern: the Source sent a preview (≈78 KB), and the crop's clock matched the preview's while the live screen kept running;
+- two Studio/Source pairs on one Mac without cross-pairing (`-TandemAutoPairName` on the Studio, a distinct device name on the Source);
 - asking with selected regions, which produces a correct Anthropic request: `claude-opus-5-5`, adaptive thinking, `effort`, `fallbacks: "default"` plus its beta header, `cache_control`, and a base64 JPEG;
 - streamed Markdown rendering, the reasoning disclosure, and reply mirroring to the Source;
 - Source push with a note, and the quick-note panel;

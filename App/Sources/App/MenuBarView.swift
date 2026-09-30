@@ -171,20 +171,20 @@ private struct StudioMenuSection: View {
             }
             HStack(spacing: 8) {
                 Button {
-                    studio.captureAndAsk()
+                    if !studio.askAboutSelection() { model.showMainWindow() }
                 } label: {
                     Label("Ask", systemImage: "sparkles").frame(maxWidth: .infinity)
                 }
                 .buttonStyle(TandemButtonStyle(.primary, size: .small))
-                .disabled(!model.chat.canSendFromComposer)
+                .disabled(!studio.isConnected || model.chat.isBusy)
                 Button {
-                    studio.captureToComposer()
+                    studio.beginRegionSelection()
                     model.showMainWindow()
                 } label: {
-                    Label("Select region", systemImage: "rectangle.dashed").frame(maxWidth: .infinity)
+                    Label("Select Region", systemImage: "rectangle.dashed").frame(maxWidth: .infinity)
                 }
                 .buttonStyle(TandemButtonStyle(.secondary, size: .small))
-                .disabled(!studio.canCapture || studio.isCapturing)
+                .disabled(!studio.canCapture)
             }
             Toggle(isOn: Binding(get: { model.settings.autoCaptureEnabled }, set: { _ in studio.toggleAutoCapture() })) {
                 VStack(alignment: .leading, spacing: 1) {
