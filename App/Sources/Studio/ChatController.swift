@@ -59,6 +59,8 @@ final class ChatController {
     var attachLiveSnapshot: Bool
     private(set) var streaming: StreamingReply?
     private(set) var isCapturingForSend = false
+    /// Sending waits a moment for the transcript to catch up with the newest speech.
+    private(set) var isWaitingForWords = false
     private(set) var banner: String?
     var searchText = ""
     /// Set to open the markup editor for a composer attachment.
@@ -69,11 +71,15 @@ final class ChatController {
     @ObservationIgnored private let settings: SettingsStore
     @ObservationIgnored private let keys: APIKeyStore
     @ObservationIgnored weak var studio: StudioEngine?
+    /// The live transcript of the shared Mac's audio (owned by the Studio engine).
+    @ObservationIgnored weak var transcription: TranscriptionService?
     @ObservationIgnored private var streamTask: Task<Void, Never>?
     @ObservationIgnored private var pendingText = ""
     @ObservationIgnored private var pendingReasoning = ""
     @ObservationIgnored private var flushScheduled = false
     @ObservationIgnored private var lastMirror = 0.0
+    /// When the current question was sent, for the timing log.
+    @ObservationIgnored private var sendStartedAt: Double?
     @ObservationIgnored private let log = Logger(subsystem: "com.rofel.tandem", category: "Chat")
 
     typealias ClientFactory = (AIEndpoint) -> any AIClient
@@ -129,8 +135,22 @@ final class ChatController {
 
     var isBusy: Bool { streaming != nil || isCapturingForSend || !applyingMarkup.isEmpty }
 
+    /// Starts Claude Code ahead of the next question, so it doesn't wait for the CLI to launch.
+    func prewarm() {
+        guard settings.provider == .claudeCode, let made = try? makeClient(), let claude = made.0 as? ClaudeCodeClient else { return }
+        claude.prewarm(for: AIRequest(
+            model: made.2,
+            systemPrompt: settings.systemPrompt,
+            turns: [],
+            maxOutputTokens: settings.maxOutputTokens,
+            effort: settings.effort,
+            includeReasoningSummary: settings.showReasoning
+        ))
+    }
+
     @discardableResult
     func newThread() -> UUID {
+        prewarm()
         if let current = selectedThread, current.messages.isEmpty { return current.id }
         let thread = ChatThread()
         threads.insert(thread, at: 0)
@@ -141,6 +161,7 @@ final class ChatController {
 
     func deleteThread(_ id: UUID) {
         if streaming?.threadID == id { stop() }
+        ClaudeCodeSessionPool.shared.end(conversationID: id)
         guard let index = threads.firstIndex(where: { $0.id == id }) else { return }
         let ids = threads[index].messages.flatMap(\.attachments).map(\.id)
         snapshots.remove(ids)
@@ -164,6 +185,7 @@ final class ChatController {
 
     func clearAllHistory() {
         stop()
+        ClaudeCodeSessionPool.shared.removeAll()
         threads.removeAll()
         store.deleteAll()
         snapshots.removeAll()
@@ -291,6 +313,7 @@ final class ChatController {
 
     private func send(skill: PromptSkill?) {
         guard !isBusy else { return }
+        sendStartedAt = monotonicSeconds()
         let text = composerText.trimmingCharacters(in: .whitespacesAndNewlines)
         let wantsLive = attachLiveSnapshot && (skill?.attachesScreenshot ?? true) && (studio?.canCapture ?? false)
         guard !text.isEmpty || !composerAttachments.isEmpty || wantsLive || skill != nil else { return }
@@ -299,8 +322,23 @@ final class ChatController {
         composerAttachments.removeAll()
         banner = nil
 
+        // A question asked out loud a moment ago may still be being transcribed.
+        let transcription = (skill?.attachesTranscript ?? true) ? self.transcription : nil
+        let waitsForWords = transcription.map { $0.isEnabled && $0.isReceivingAudio() } ?? false
         guard wantsLive, let studio else {
-            submit(text: text, attachments: attachments, trigger: nil, sourceNote: nil, skill: skill)
+            guard waitsForWords, let transcription else {
+                submit(text: text, attachments: attachments, trigger: nil, sourceNote: nil, skill: skill)
+                return
+            }
+            isCapturingForSend = true
+            isWaitingForWords = true
+            Task {
+                await transcription.waitForLatestWords()
+                markTiming("transcript caught up")
+                isWaitingForWords = false
+                isCapturingForSend = false
+                submit(text: text, attachments: attachments, trigger: nil, sourceNote: nil, skill: skill)
+            }
             return
         }
         isCapturingForSend = true
@@ -308,8 +346,13 @@ final class ChatController {
             defer { isCapturingForSend = false }
             do {
                 let snapshot = try await studio.requestSnapshot(trigger: .composer)
+                markTiming("screenshot")
                 let attachment = makeAttachment(from: snapshot, sourceName: studio.sourceName)
                 snapshots.put(snapshot.data, id: attachment.id)
+                if waitsForWords {
+                    await transcription?.waitForLatestWords(timeout: 0.5)
+                    markTiming("transcript caught up")
+                }
                 submit(text: text, attachments: attachments + [attachment], trigger: .composer, sourceNote: nil, skill: skill)
             } catch {
                 banner = "Sent without a new screenshot: \(error.localizedDescription)"
@@ -337,7 +380,8 @@ final class ChatController {
 
     private func submit(text: String, attachments: [SnapshotAttachment], trigger: SnapshotTrigger?, sourceNote: String?, skill: PromptSkill? = nil) {
         let threadID = selectedThread.map(\.id) ?? newThread()
-        let message = ChatMessage(role: .user, text: text, attachments: attachments, trigger: trigger, sourceNote: sourceNote, skill: skill)
+        let transcript = transcriptExcerpt(for: threadID, skill: skill)
+        let message = ChatMessage(role: .user, text: text, attachments: attachments, trigger: trigger, sourceNote: sourceNote, skill: skill, transcript: transcript)
         mutate(threadID) { thread in
             thread.messages.append(message)
             if !thread.hasCustomTitle, thread.messages.filter({ $0.role == .user }).count == 1 {
@@ -347,6 +391,13 @@ final class ChatController {
         }
         selectedThreadID = threadID
         startReply(in: threadID)
+    }
+
+    /// What was said on the shared Mac since this thread's last transcript, while listening.
+    private func transcriptExcerpt(for threadID: UUID, skill: PromptSkill?) -> TranscriptExcerpt? {
+        guard skill?.attachesTranscript ?? true, let transcription, transcription.isEnabled else { return nil }
+        let previous = threads.first { $0.id == threadID }?.messages.compactMap { $0.transcript?.coveredThrough }.max()
+        return transcription.excerpt(after: previous, sourceName: studio?.sourceName)
     }
 
     /// Regenerates the assistant reply `messageID` (and drops anything after it).
@@ -395,8 +446,16 @@ final class ChatController {
         return (clientFactory(endpoint), provider, model)
     }
 
+    /// Logs how long after sending each step finished (Console: category Chat, "TANDEM-TIMING").
+    private func markTiming(_ step: String, done: Bool = false) {
+        guard let start = sendStartedAt else { return }
+        log.info("TANDEM-TIMING \(step, privacy: .public) +\(Int((monotonicSeconds() - start) * 1000), privacy: .public) ms")
+        if done { sendStartedAt = nil }
+    }
+
     private func startReply(in threadID: UUID) {
         guard let thread = threads.first(where: { $0.id == threadID }) else { return }
+        if sendStartedAt == nil { sendStartedAt = monotonicSeconds() }
         let history = thread.messages
         let assistant = ChatMessage(role: .assistant, text: "", status: .streaming, provider: settings.provider, model: settings.currentModel)
         mutate(threadID) { $0.messages.append(assistant) }
@@ -416,13 +475,20 @@ final class ChatController {
         let capabilities = ModelCatalog.capabilities(for: model, provider: provider)
         let policy = ContextPolicy(maxImages: settings.maxImagesInContext)
         let snapshots = self.snapshots
+        // Lets Claude Code continue the thread's live session with just the new question.
+        let conversation = AIConversationKey(
+            conversationID: threadID,
+            messageIDs: ContextBuilder.includedMessageIDs(for: history, policy: policy),
+            replyID: assistant.id
+        )
         let request = AIRequest(
             model: model,
             systemPrompt: settings.systemPrompt,
             turns: [],
             maxOutputTokens: settings.maxOutputTokens,
             effort: settings.effort,
-            includeReasoningSummary: settings.showReasoning
+            includeReasoningSummary: settings.showReasoning,
+            conversation: conversation
         )
 
         streamTask = Task { [weak self] in
@@ -435,6 +501,7 @@ final class ChatController {
             var fullRequest = request
             fullRequest.turns = turns
             guard let self else { return }
+            self.markTiming("context built")
             guard !turns.isEmpty else {
                 self.finish(reply, status: .failed("There's nothing to send yet."), usage: nil, servedModel: nil)
                 return
@@ -445,11 +512,16 @@ final class ChatController {
                     switch event {
                     case .started(let served):
                         reply.model = served
+                        self.markTiming("model started")
                     case .textDelta(let delta):
-                        if reply.firstTokenAt == nil { reply.firstTokenAt = Date() }
+                        if reply.firstTokenAt == nil {
+                            reply.firstTokenAt = Date()
+                            self.markTiming("first words", done: true)
+                        }
                         self.pendingText += delta
                         self.scheduleFlush(reply)
                     case .reasoningDelta(let delta):
+                        if reply.reasoning.isEmpty, self.pendingReasoning.isEmpty { self.markTiming("first reasoning") }
                         self.pendingReasoning += delta
                         self.scheduleFlush(reply)
                     case .notice(let notice):
@@ -559,6 +631,13 @@ final class ChatController {
                 lines.append("_\(message.attachments.count) screenshot\(message.attachments.count == 1 ? "" : "s")_")
             }
             if let note = message.sourceNote { lines.append("> \(note)") }
+            if let transcript = message.transcript, !transcript.isEmpty {
+                lines.append("<details><summary>Transcript</summary>")
+                lines.append("")
+                lines.append(transcript.plainText.split(separator: "\n").map { "> \($0)" }.joined(separator: "\n"))
+                lines.append("")
+                lines.append("</details>")
+            }
             if let skill = message.skill { lines.append("**\(skill.title)**") }
             lines.append(message.text)
             lines.append("")

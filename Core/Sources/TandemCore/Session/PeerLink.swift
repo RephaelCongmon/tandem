@@ -72,13 +72,15 @@ public enum PeerLinkState: Sendable, Equatable {
 
 /// One authenticated, encrypted session with another Mac over any `ByteTransport`.
 ///
-/// Outbound messages are queued by priority (control → bulk → video) and sealed
+/// Outbound messages are queued by priority (control → audio → bulk → video) and sealed
 /// only when handed to the transport, so record counters always match wire order.
 /// All state lives on the transport's serial queue; callbacks fire there too.
 public final class PeerLink {
     public enum Priority: Sendable {
         /// Small, latency-critical messages (acks, requests, status).
         case control
+        /// Live audio packets: small, steady and needed promptly for live transcripts.
+        case audio
         /// Snapshot chunks: large but user-visible, so ahead of live video.
         case bulk
         /// Live preview frames.
@@ -106,6 +108,7 @@ public final class PeerLink {
     private var decoder = FrameDecoder()
     private var rawQueue: [Data] = []
     private var controlQueue: [Data] = []
+    private var audioQueue: [Data] = []
     private var bulkQueue: [Data] = []
     private var videoQueue: [Data] = []
     private var queuedBytes = 0
@@ -216,6 +219,9 @@ public final class PeerLink {
 
     public var hasQueuedVideo: Bool { !videoQueue.isEmpty }
 
+    /// Audio packets waiting to be sent; a producer drops audio rather than let it pile up.
+    public var queuedAudioPackets: Int { audioQueue.count }
+
     private func enqueue(_ message: PeerMessage, priority: Priority) {
         let encoded: Data
         do {
@@ -227,6 +233,7 @@ public final class PeerLink {
         queuedBytes += encoded.count
         switch priority {
         case .control: controlQueue.append(encoded)
+        case .audio: audioQueue.append(encoded)
         case .bulk: bulkQueue.append(encoded)
         case .video: videoQueue.append(encoded)
         }
@@ -270,6 +277,7 @@ public final class PeerLink {
 
     private func dequeueApplicationMessage() -> Data? {
         if !controlQueue.isEmpty { return controlQueue.removeFirst() }
+        if !audioQueue.isEmpty { return audioQueue.removeFirst() }
         if !bulkQueue.isEmpty { return bulkQueue.removeFirst() }
         if !videoQueue.isEmpty { return videoQueue.removeFirst() }
         return nil
@@ -454,6 +462,7 @@ public final class PeerLink {
         timer = nil
         rawQueue.removeAll()
         controlQueue.removeAll()
+        audioQueue.removeAll()
         bulkQueue.removeAll()
         videoQueue.removeAll()
         queuedBytes = 0

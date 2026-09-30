@@ -69,6 +69,12 @@ public struct CaptureSourceDescriptor: Codable, Sendable, Hashable, Identifiable
 // MARK: - Control payloads
 
 public struct PeerHello: Codable, Sendable, Hashable {
+    /// Features a peer supports beyond protocol v1's basics.
+    public enum Capability {
+        /// Source: can send its computer audio. Studio: can receive and transcribe it.
+        public static let audio = "audio"
+    }
+
     public var role: PeerRole
     public var appVersion: String
     public var protocolVersion: Int
@@ -264,6 +270,72 @@ public struct VideoAck: Codable, Sendable, Hashable {
     public init(sequence: UInt32) { self.sequence = sequence }
 }
 
+// MARK: - Audio
+
+/// How live audio is compressed on the wire.
+public enum LiveAudioCodec: String, Codable, Sendable, Hashable, CaseIterable {
+    /// Opus in 20 ms frames: about 32 kbps for speech, fine even over Bluetooth.
+    case opus
+    /// Uncompressed 16-bit little-endian PCM (the fallback when Opus isn't available).
+    case pcm16
+
+    var wireValue: UInt8 {
+        switch self {
+        case .opus: return 1
+        case .pcm16: return 2
+        }
+    }
+
+    init?(wireValue: UInt8) {
+        switch wireValue {
+        case 1: self = .opus
+        case 2: self = .pcm16
+        default: return nil
+        }
+    }
+}
+
+/// The Studio asks the Source to start or stop sending its computer audio (for transcripts).
+public struct AudioRequest: Codable, Sendable, Hashable {
+    public var enabled: Bool
+    /// Codecs the Studio can decode, most preferred first.
+    public var codecs: [LiveAudioCodec]
+
+    public init(enabled: Bool, codecs: [LiveAudioCodec] = LiveAudioCodec.allCases) {
+        self.enabled = enabled
+        self.codecs = codecs
+    }
+}
+
+/// Whether the Source is sending audio, and why not.
+public struct AudioStatus: Codable, Sendable, Hashable {
+    public enum State: String, Codable, Sendable, Hashable {
+        /// Not requested.
+        case off
+        case starting
+        case live
+        /// Sharing is paused or the Source is locked; nothing is captured.
+        case paused
+        /// Screen & System Audio Recording permission is missing on the Source.
+        case needsPermission
+        /// The Source's user turned audio sharing off.
+        case notAllowed
+        case error
+    }
+
+    public var state: State
+    public var message: String?
+    public var codec: LiveAudioCodec?
+    public var sampleRate: Int?
+
+    public init(state: State, message: String? = nil, codec: LiveAudioCodec? = nil, sampleRate: Int? = nil) {
+        self.state = state
+        self.message = message
+        self.codec = codec
+        self.sampleRate = sampleRate
+    }
+}
+
 /// Every JSON control message exchanged over an established session.
 public enum ControlMessage: Codable, Sendable, Hashable {
     case hello(PeerHello)
@@ -280,6 +352,8 @@ public enum ControlMessage: Codable, Sendable, Hashable {
     case selectSource(CaptureSourceID)
     case automationStatus(AutomationStatus)
     case replyMirror(ReplyMirror)
+    case audioRequest(AudioRequest)
+    case audioStatus(AudioStatus)
     case ping(PingPayload)
     case pong(PongPayload)
     case goodbye(reason: String)
@@ -343,6 +417,28 @@ public struct SnapshotChunk: Sendable, Hashable {
     }
 }
 
+/// About 100 ms of the Source's computer audio, mono.
+public struct AudioPacket: Sendable, Hashable {
+    public var codec: LiveAudioCodec
+    public var sequence: UInt32
+    public var sampleRate: Int
+    /// Samples the packet decodes to.
+    public var sampleCount: Int
+    /// Source wall clock at the first sample, nanoseconds since 1970.
+    public var capturedAtNanos: UInt64
+    /// Encoded frames in order: 20 ms Opus frames, or one chunk of PCM.
+    public var frames: [Data]
+
+    public init(codec: LiveAudioCodec, sequence: UInt32, sampleRate: Int, sampleCount: Int, capturedAtNanos: UInt64, frames: [Data]) {
+        self.codec = codec
+        self.sequence = sequence
+        self.sampleRate = sampleRate
+        self.sampleCount = sampleCount
+        self.capturedAtNanos = capturedAtNanos
+        self.frames = frames
+    }
+}
+
 // MARK: - Envelope
 
 /// Everything that travels inside an established secure session.
@@ -351,6 +447,7 @@ public enum PeerMessage: Sendable, Hashable {
     case videoFormat(VideoFormat)
     case videoFrame(VideoFrame)
     case snapshotChunk(SnapshotChunk)
+    case audioPacket(AudioPacket)
 }
 
 public enum PeerMessageCodingError: Error, Equatable {
@@ -364,6 +461,7 @@ public enum PeerMessageCodec {
         case videoFormat = 2
         case videoFrame = 3
         case snapshotChunk = 4
+        case audioPacket = 5
     }
 
     private static let encoder: JSONEncoder = {
@@ -416,6 +514,22 @@ public enum PeerMessageCodec {
             writer.write(UInt32(clamping: chunk.count))
             writer.write(raw: chunk.data)
             return writer.data
+
+        case .audioPacket(let packet):
+            var writer = ByteWriter(capacity: packet.frames.reduce(32) { $0 + $1.count + 2 })
+            writer.write(Tag.audioPacket.rawValue)
+            writer.write(packet.codec.wireValue)
+            writer.write(packet.sequence)
+            writer.write(UInt32(clamping: packet.sampleRate))
+            writer.write(UInt32(clamping: packet.sampleCount))
+            writer.write(packet.capturedAtNanos)
+            let frames = packet.frames.prefix(Int(UInt8.max))
+            writer.write(UInt8(frames.count))
+            for frame in frames {
+                guard frame.count <= Int(UInt16.max) else { throw PeerMessageCodingError.malformed("audio frame too large") }
+                writer.writeShortBlob(frame)
+            }
+            return writer.data
         }
     }
 
@@ -464,6 +578,23 @@ public enum PeerMessageCodec {
                 let count = Int(try reader.readUInt32())
                 guard count > 0, index < count else { throw PeerMessageCodingError.malformed("chunk index") }
                 return .snapshotChunk(SnapshotChunk(snapshotID: id, index: index, count: count, data: reader.readRemaining()))
+
+            case .audioPacket:
+                guard let codec = LiveAudioCodec(wireValue: try reader.readUInt8()) else {
+                    throw PeerMessageCodingError.malformed("unknown audio codec")
+                }
+                let sequence = try reader.readUInt32()
+                let sampleRate = Int(try reader.readUInt32())
+                let sampleCount = Int(try reader.readUInt32())
+                let captured = try reader.readUInt64()
+                let count = Int(try reader.readUInt8())
+                var frames: [Data] = []
+                frames.reserveCapacity(count)
+                for _ in 0..<count { frames.append(try reader.readShortBlob()) }
+                guard (8_000...48_000).contains(sampleRate), sampleCount <= sampleRate * 2 else {
+                    throw PeerMessageCodingError.malformed("audio format")
+                }
+                return .audioPacket(AudioPacket(codec: codec, sequence: sequence, sampleRate: sampleRate, sampleCount: sampleCount, capturedAtNanos: captured, frames: frames))
             }
         } catch is ByteReader.ReadError {
             throw PeerMessageCodingError.malformed("truncated")

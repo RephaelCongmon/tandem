@@ -40,13 +40,29 @@ public enum ContextBuilder {
     public static func turns(
         for messages: [ChatMessage],
         policy: ContextPolicy = ContextPolicy(),
+        timeZone: TimeZone = .current,
         imageProvider: (SnapshotAttachment) -> AIImage?
     ) -> [AITurn] {
+        let windowed = window(messages, policy: policy)
+        return build(windowed, policy: policy, timeZone: timeZone, imageProvider: imageProvider)
+    }
+
+    /// The messages `turns(for:policy:…)` draws on, oldest first.
+    public static func includedMessageIDs(for messages: [ChatMessage], policy: ContextPolicy = ContextPolicy()) -> [UUID] {
+        var windowed = window(messages, policy: policy)
+        // Mirrors the trailing-assistant trim in `build`.
+        while let last = windowed.last, last.role != .user { windowed.removeLast() }
+        return windowed.map(\.id)
+    }
+
+    /// Steps 1–2: eligible messages inside the (stepped) message window, starting with a user message.
+    private static func window(_ messages: [ChatMessage], policy: ContextPolicy) -> [ChatMessage] {
         // 1. Eligible messages: user messages and assistant messages with content.
         let eligible = messages.filter { message in
             switch message.role {
             case .user:
-                return !message.text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty || !message.attachments.isEmpty || message.skill != nil
+                return !message.text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty || !message.attachments.isEmpty
+                    || message.skill != nil || !(message.transcript?.isEmpty ?? true)
             case .assistant:
                 guard !message.text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else { return false }
                 switch message.status {
@@ -62,6 +78,15 @@ public enum ContextBuilder {
         let messageStart = ContextPolicy.steppedStart(count: eligible.count, limit: policy.maxMessages, step: policy.messageWindowStep)
         var windowed = Array(eligible[messageStart...])
         while let first = windowed.first, first.role != .user { windowed.removeFirst() }
+        return windowed
+    }
+
+    private static func build(
+        _ windowed: [ChatMessage],
+        policy: ContextPolicy,
+        timeZone: TimeZone,
+        imageProvider: (SnapshotAttachment) -> AIImage?
+    ) -> [AITurn] {
 
         // 3. Image window (stepped), always keeping the newest message's images.
         let allAttachmentIDs = windowed.flatMap { $0.role == .user ? $0.attachments.map(\.id) : [] }
@@ -87,6 +112,9 @@ public enum ContextBuilder {
                 }
                 if let note = message.sourceNote?.trimmingCharacters(in: .whitespacesAndNewlines), !note.isEmpty {
                     parts.append(.text("Note typed on the shared Mac: \(note)"))
+                }
+                if let transcript = message.transcript, !transcript.isEmpty {
+                    parts.append(.text(transcript.contextText(timeZone: timeZone)))
                 }
             }
             let text = message.text.trimmingCharacters(in: .whitespacesAndNewlines)

@@ -117,6 +117,10 @@ struct TandemCommands: Commands {
                     model.studio.livePreviewEnabled.toggle()
                 }
                 .keyboardShortcut("l", modifiers: [.command, .shift])
+                Button(model.settings.listen ? "Stop Listening" : "Listen to Shared Mac's Audio") {
+                    model.studio.setListening(!model.settings.listen)
+                }
+                .keyboardShortcut("l", modifiers: [.command, .option])
                 if !model.settings.skills.isEmpty {
                     Divider()
                     ForEach(Array(model.settings.skills.prefix(9).enumerated()), id: \.element.id) { index, skill in

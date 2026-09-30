@@ -50,6 +50,11 @@ struct ThreadPanel: View {
             } else {
                 ThreadEmptyState()
             }
+            if model.settings.listen, model.settings.showCaptions {
+                LiveCaptionBar()
+                    .padding(.horizontal, Spacing.m)
+                    .padding(.top, Spacing.s)
+            }
             SkillBar()
                 .padding(.horizontal, Spacing.m + 2)
                 .padding(.top, Spacing.s)

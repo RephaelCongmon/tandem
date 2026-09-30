@@ -83,6 +83,7 @@ struct ComposerView: View {
     }
 
     private var hint: String {
+        if model.chat.isWaitingForWords { return "Catching the last words…" }
         if model.chat.isCapturingForSend { return "Capturing the screen…" }
         if !model.chat.applyingMarkup.isEmpty { return "Applying your edits…" }
         if model.chat.streaming != nil { return "Answering… press ⌘. to stop" }
@@ -108,6 +109,7 @@ struct ComposerView: View {
             HStack(spacing: 8) {
                 if model.studio.isConnected {
                     LiveToggleChip(isOn: $chat.attachLiveSnapshot, enabled: model.studio.canCapture)
+                    ListenToggleChip()
                 }
                 ForEach(chat.composerAttachments) { item in
                     ComposerThumbnail(item: item) {

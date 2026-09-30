@@ -44,7 +44,9 @@
 	<key>NSPrincipalClass</key>
 	<string>NSApplication</string>
 	<key>NSScreenCaptureUsageDescription</key>
-	<string>Tandem shares this Mac's screen with the other Mac you paired, only while sharing is on.</string>
+	<string>Tandem shares this Mac's screen, and its sound when the other Mac listens, with the other Mac you paired, only while sharing is on.</string>
+	<key>NSSpeechRecognitionUsageDescription</key>
+	<string>Tandem turns the shared Mac's audio into a live transcript on this Mac, so questions asked out loud in a meeting can be answered.</string>
 	<key>NSSupportsAutomaticTermination</key>
 	<false/>
 	<key>TandemUpdateRepository</key>

@@ -3,18 +3,24 @@ import Foundation
 /// Answers through the Claude Code command-line tool installed on this Mac, so questions run on
 /// the user's Claude subscription instead of an API key.
 ///
-/// Each request starts `claude -p` with a clean slate: no tools, and `--safe-mode` keeps the
-/// user's hooks, plugins, MCP servers, skills and CLAUDE.md files out of it, while Tandem's
-/// instructions replace Claude Code's own system prompt. The conversation goes to stdin as a
-/// single stream-json user message. The CLI can't be handed earlier assistant turns, so prior
-/// turns are folded into that message as a labelled transcript with screenshots in place. The
+/// `claude -p` runs with a clean slate: no tools, and `--safe-mode` keeps the user's hooks,
+/// plugins, MCP servers, skills and CLAUDE.md files out of it, while Tandem's instructions
+/// replace Claude Code's own system prompt. Messages go to stdin as stream-json lines, and the
 /// CLI relays the Messages API stream events, which ``AnthropicStreamParser`` already reads.
+///
+/// The process stays running after an answer (see ``ClaudeCodeSessionPool``), so the next
+/// question in the same thread sends only the new message: the CLI remembers the conversation
+/// and its prompt cache covers it. A new or changed conversation starts a (pre-started) process
+/// and sends everything as one user message, since the CLI can't be handed earlier assistant
+/// turns; prior turns are folded into it as a labelled transcript with screenshots in place.
 public struct ClaudeCodeClient: AIClient {
     public let executable: URL
     let environment: [String: String]
     let workingDirectory: URL
     /// The CLI is stopped if it prints nothing for this long.
     let idleTimeout: TimeInterval
+    /// Where live conversations and the spare process are kept; `nil` runs one process per request.
+    let pool: ClaudeCodeSessionPool?
 
     /// - Parameters:
     ///   - executable: The `claude` binary (see ``ClaudeCodeLocator``).
@@ -24,12 +30,14 @@ public struct ClaudeCodeClient: AIClient {
         executable: URL,
         environment: [String: String] = ProcessInfo.processInfo.environment,
         workingDirectory: URL = ClaudeCodeClient.defaultWorkingDirectory,
-        idleTimeout: TimeInterval = 300
+        idleTimeout: TimeInterval = 300,
+        pool: ClaudeCodeSessionPool? = .shared
     ) {
         self.executable = executable
         self.environment = environment
         self.workingDirectory = workingDirectory
         self.idleTimeout = idleTimeout
+        self.pool = pool
     }
 
     public static var defaultWorkingDirectory: URL {
@@ -46,18 +54,27 @@ public struct ClaudeCodeClient: AIClient {
 
     private func run(_ request: AIRequest, continuation: AIEventStream.Continuation) async throws {
         let model = try request.validatedModel()
-        let input = try Self.inputLine(for: request)
         guard FileManager.default.isExecutableFile(atPath: executable.path) else {
             throw AIError.invalidConfiguration(ClaudeCodeMessages.notFound)
         }
-        try? FileManager.default.createDirectory(at: workingDirectory, withIntermediateDirectories: true)
-        let child = ChildProcess(
-            executable: executable,
-            arguments: Self.arguments(for: request, model: model),
-            environment: Self.childEnvironment(from: environment, executable: executable, maxOutputTokens: request.maxOutputTokens),
-            workingDirectory: workingDirectory
-        )
-        try child.start()
+        let configuration = sessionConfiguration(for: request, model: model)
+
+        // Continue the thread's live session when it holds exactly the earlier messages.
+        let session: ClaudeCodeSession
+        let input: Data
+        if let pool, let key = request.conversation, key.messageIDs.count > 1, let last = request.turns.last,
+           let live = pool.checkout(conversationID: key.conversationID, configuration: configuration, history: Array(key.messageIDs.dropLast())) {
+            session = live
+            input = try Self.inputLine(content: Self.content(of: [last]))
+        } else if let pool {
+            session = try pool.fresh(configuration: configuration)
+            input = try Self.inputLine(for: request)
+        } else {
+            session = try ClaudeCodeSession(configuration: configuration)
+            input = try Self.inputLine(for: request)
+        }
+        let child = session.child
+        child.noteOutput()
 
         let watchdog = Task { [idleTimeout] in
             while !Task.isCancelled {
@@ -69,29 +86,64 @@ public struct ClaudeCodeClient: AIClient {
                 }
             }
         }
+        var succeeded = false
         defer {
             watchdog.cancel()
-            child.terminate()
+            if succeeded, let pool, let key = request.conversation {
+                pool.checkin(session, conversationID: key.conversationID, history: key.messageIDs + [key.replyID])
+            } else {
+                session.terminate()
+            }
         }
 
+        // Without a conversation to continue, the CLI answers once and exits at end of input.
+        let keepsSession = pool != nil && request.conversation != nil
         var parser = ClaudeCodeStreamParser(includeReasoning: request.includeReasoningSummary)
         try await withTaskCancellationHandler {
-            // A failed write (the CLI exited early) surfaces through the output below.
-            let writer = Task.detached { try? child.writeInput(input) }
-            for try await line in child.outputLines {
+            // Written alongside reading, so a large message can't deadlock on full pipes. A failed
+            // write (the CLI exited early) surfaces through the output below.
+            let writer = Task.detached {
+                try? session.send(input)
+                if !keepsSession { child.closeInput() }
+            }
+            // Have a spare ready for the next new conversation while this one is answered.
+            if let pool {
+                Task.detached(priority: .utility) { pool.prewarm(configuration: configuration) }
+            }
+            while let line = try await session.nextLine() {
                 child.noteOutput()
                 for event in try parser.consume(line: line) { continuation.yield(event) }
-                if parser.isFinished { break }
+                if parser.isFinished {
+                    _ = await writer.value
+                    succeeded = keepsSession && !Task.isCancelled
+                    return
+                }
             }
             _ = await writer.value
-            if parser.isFinished { return }
             let status = await child.exitStatus()
             if child.didTimeOut { throw AIError.timeout }
             try Task.checkCancellation()
             for event in try parser.finish(exitStatus: status, errorOutput: child.errorOutput) { continuation.yield(event) }
         } onCancel: {
-            child.terminate()
+            session.terminate()
         }
+    }
+
+    /// Starts a Claude Code process ahead of time for requests like `request`, so the next
+    /// question skips the CLI's launch.
+    public func prewarm(for request: AIRequest) {
+        guard let pool, let model = try? request.validatedModel(), FileManager.default.isExecutableFile(atPath: executable.path) else { return }
+        let configuration = sessionConfiguration(for: request, model: model)
+        Task.detached(priority: .utility) { pool.prewarm(configuration: configuration) }
+    }
+
+    func sessionConfiguration(for request: AIRequest, model: String) -> ClaudeCodeSession.Configuration {
+        ClaudeCodeSession.Configuration(
+            executable: executable,
+            arguments: Self.arguments(for: request, model: model),
+            environment: Self.childEnvironment(from: environment, executable: executable, maxOutputTokens: request.maxOutputTokens),
+            workingDirectory: workingDirectory
+        )
     }
 
     public func listModels() async throws -> [AIModelInfo] {
@@ -137,14 +189,25 @@ public struct ClaudeCodeClient: AIClient {
 
     /// The stream-json line for `request`: one user message holding the whole conversation.
     static func inputLine(for request: AIRequest) throws -> Data {
-        let messages = try AnthropicClient.makeMessages(from: request.turns)
+        try inputLine(content: foldedContent(AnthropicClient.makeMessages(from: request.turns)))
+    }
+
+    static func inputLine(content: [JSONValue]) throws -> Data {
         let line: JSONValue = [
             "type": "user",
-            "message": ["role": "user", "content": .array(foldedContent(messages))]
+            "message": ["role": "user", "content": .array(content)]
         ]
         var data = line.serialized()
         data.append(0x0A)
         return data
+    }
+
+    /// The content blocks of `turns` as one user message (used for a single new turn).
+    static func content(of turns: [AITurn]) throws -> [JSONValue] {
+        try AnthropicClient.makeMessages(from: turns).flatMap { message -> [JSONValue] in
+            guard case .object(let fields) = message, case .array(let content)? = fields["content"] else { return [] }
+            return content
+        }
     }
 
     /// Folds Messages API `messages` into the content of one user message. A single user turn is

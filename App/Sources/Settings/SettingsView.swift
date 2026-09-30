@@ -16,6 +16,7 @@ struct SettingsView: View {
                 AISettings().tabItem { Label("AI", systemImage: "sparkles") }.tag("ai")
                 StudioSettings().tabItem { Label("Studio", systemImage: "rectangle.split.2x1") }.tag("studio")
                 SkillSettings().tabItem { Label("Skills", systemImage: "wand.and.stars") }.tag("skills")
+                ListeningSettings().tabItem { Label("Listening", systemImage: "waveform") }.tag("listening")
                 AutomationSettings().tabItem { Label("Automation", systemImage: "timer") }.tag("automation")
             }
             ShortcutSettings().tabItem { Label("Shortcuts", systemImage: "command") }.tag("shortcuts")
@@ -111,6 +112,16 @@ private struct SharingSettings: View {
                     }
                     .frame(width: 260)
                 }
+            }
+            Section {
+                Toggle("Let the other Mac hear this Mac's audio", isOn: $settings.shareAudio)
+                    .onChange(of: settings.shareAudio) { _, _ in model.source.audioSettingChanged() }
+            } header: {
+                Text("Audio")
+            } footer: {
+                Text("When the other Mac turns on Listen, it transcribes what this Mac plays (a meeting or call) so it can answer questions asked out loud. Tandem's own sounds and your microphone aren't included, and audio stops whenever sharing is paused or this Mac is locked.")
+                    .font(TandemFont.caption)
+                    .foregroundStyle(Theme.textSecondary)
             }
             Section("Privacy & control") {
                 Toggle("Pause sharing while this Mac is locked", isOn: $settings.pauseWhenLocked)
@@ -310,6 +321,79 @@ private struct StudioSettings: View {
             }
         }
         .formStyle(.grouped)
+    }
+}
+
+// MARK: - Listening
+
+private struct ListeningSettings: View {
+    @Environment(AppModel.self) private var model
+    @State private var locales: [Locale] = []
+
+    var body: some View {
+        @Bindable var settings = model.settings
+        let transcription = model.studio.transcription
+        Form {
+            Section {
+                Toggle("Transcribe the shared Mac's audio", isOn: Binding(get: { settings.listen }, set: { model.studio.setListening($0) }))
+                Picker("Language", selection: $settings.transcriptLanguage) {
+                    Text("Same as this Mac (\(Self.name(of: Locale.current)))").tag("")
+                    if !locales.isEmpty { Divider() }
+                    ForEach(locales, id: \.identifier) { locale in
+                        Text(Self.name(of: locale)).tag(locale.identifier)
+                    }
+                }
+                .onChange(of: settings.transcriptLanguage) { _, _ in transcription.restart() }
+                Toggle("Show live captions above the skills", isOn: $settings.showCaptions)
+                LabeledContent("Status") {
+                    Text(statusText).foregroundStyle(Theme.textSecondary)
+                }
+            } header: {
+                Text("Live transcript")
+            } footer: {
+                Text("The shared Mac sends what it plays (a meeting or call, not Tandem's own sounds), and this Mac turns it into text on-device, about a second behind. Nothing leaves this Mac until you ask a question.")
+                    .font(TandemFont.caption)
+                    .foregroundStyle(Theme.textSecondary)
+            }
+            Section {
+                Toggle("Send what was said with each question", isOn: $settings.includeTranscript)
+                Picker("At most", selection: $settings.transcriptWindowMinutes) {
+                    ForEach([2, 5, 10, 20, 30], id: \.self) { Text("The last \($0) minutes").tag($0) }
+                }
+                .disabled(!settings.includeTranscript)
+            } header: {
+                Text("Asking")
+            } footer: {
+                Text("Each question carries what was said since the thread's previous question, up to this limit, so Follow-up can find a question asked out loud. Earlier transcripts stay in the thread, so the AI keeps the whole conversation in mind.")
+                    .font(TandemFont.caption)
+                    .foregroundStyle(Theme.textSecondary)
+            }
+            Section {
+                Button("Clear Transcript") { transcription.clear() }
+                    .disabled(transcription.transcript.isEmpty)
+            }
+        }
+        .formStyle(.grouped)
+        .task {
+            let supported = await LiveSpeech.supportedLocales()
+            locales = supported.sorted { Self.name(of: $0) < Self.name(of: $1) }
+        }
+    }
+
+    private var statusText: String {
+        let transcription = model.studio.transcription
+        let engine = transcription.engineName.map { " (\($0))" } ?? ""
+        switch transcription.engineState {
+        case .off: return model.settings.listen ? "Starting…" : "Off"
+        case .preparing: return "Loading the speech model…"
+        case .downloading(let fraction): return "Downloading the speech model… \(Int(fraction * 100))%"
+        case .ready: return transcription.isReceivingAudio() ? "Listening\(engine)" : "Ready\(engine), waiting for audio"
+        case .failed(let message): return message
+        }
+    }
+
+    private static func name(of locale: Locale) -> String {
+        Locale.current.localizedString(forIdentifier: locale.identifier) ?? locale.identifier
     }
 }
 

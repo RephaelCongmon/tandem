@@ -1,6 +1,6 @@
 # Tandem
 
-**Two Macs, one conversation.** Tandem pairs two nearby Macs. One Mac (the **Source**) streams its screen, a window, or its camera to the other (the **Studio**) in real time. The Studio sends snapshots of that screen — with your own context, markup and redactions — to **Claude** or **OpenAI**, and shows the answers as a conversation thread.
+**Two Macs, one conversation.** Tandem pairs two nearby Macs. One Mac (the **Source**) streams its screen, a window, or its camera to the other (the **Studio**) in real time. The Studio sends snapshots of that screen — with your own context, markup and redactions — to **Claude** or **OpenAI**, and shows the answers as a conversation thread. It can also **listen**: the Source's computer audio (a meeting or call) is transcribed live on the Studio, so a question someone asks out loud can be answered with one click.
 
 It's built for moments like: your work laptop can't run AI tools but your personal one can; a demo or rehearsal where a second Mac watches and advises; a long-running job you want summarized every few minutes; or simply keeping the AI conversation off the screen you're working on.
 
@@ -11,6 +11,8 @@ It's built for moments like: your work laptop can't run AI tools but your person
 - **Ask Claude or OpenAI.** Streaming answers with Markdown, code blocks, tables and an optional reasoning summary. By default Tandem asks Claude through **Claude Code on your Claude subscription**, with no API key. Claude Opus 5.5 is the default (Fable 5.1, Sonnet 5.5 and Haiku 4.5 are available). An Anthropic or OpenAI API key (GPT‑6 Astra/Sol/Luna), or any OpenAI-compatible server (LM Studio, Ollama, vLLM), also works.
 - **Your context, your way.** Type a question; attach a fresh screenshot automatically; annotate it first (boxes, arrows, pen, highlight, text), **crop** to what matters and **redact** anything private before it leaves the Mac.
 - **On demand, by shortcut, or on a schedule.** Global shortcuts on both Macs, a "send with note" panel on the Source, and auto-capture every N seconds — optionally only when the screen actually changed (detected on the Source, so unchanged screens aren't even sent), with an hourly cap.
+- **Hears the meeting, too.** Turn on **Listen** and the Source's computer audio streams to the Studio (Opus, about 30 kbps) and is transcribed on-device as it's spoken, about a second behind. **Follow-up** finds the question just asked out loud, or on screen, and answers it in a few plain sentences. The transcript also goes with every other question, so the AI knows what's being discussed.
+- **Remembers the conversation.** With Claude Code, each thread keeps a live session, so a follow-up sends only what's new and starts answering sooner. Earlier questions, answers, screenshots and transcripts stay in context.
 - **Answers on both Macs.** Replies can be mirrored back to the Source's window and menu bar.
 - **Private by design.** Pairing is confirmed with a 6-digit code; every session is end-to-end encrypted and mutually authenticated. Screenshots go only to the AI provider you choose, on your own subscription or key, and stay in memory unless you opt to keep them.
 
@@ -37,7 +39,8 @@ It's built for moments like: your work laptop can't run AI tools but your person
 - Press the capture button (or ⇧⌘S) to grab a screenshot into the composer, then click it to **annotate, crop or redact** before sending.
 - **Ask** (⇧⌘↩) captures and asks in one step using your typed text or the default prompt. Quick prompts live behind the ✦ menu.
 - The ⏱ control turns on **auto-capture** and sets the interval; the menu also chooses whether each capture asks the AI or just updates the composer, and whether to skip unchanged screens.
-- **Skills** are one-click buttons above the message field: **Debug**, **New Problem** and **Follow-up** to start with. Each one sends a fresh screenshot plus that skill's detailed instructions, and anything you've typed goes along as extra context. The thread shows just the skill's name. ⌘1–⌘9 trigger the first nine. Add, edit and reorder skills in Settings › Skills, or with the ⚙ button next to them.
+- **Skills** are one-click buttons above the message field: **Debug**, **New Problem** and **Follow-up** to start with. Each one sends a fresh screenshot and what was just said (when **Listen** is on) plus that skill's detailed instructions, and anything you've typed goes along as extra context. The thread shows just the skill's name. ⌘1–⌘9 trigger the first nine. Add, edit and reorder skills in Settings › Skills, or with the ⚙ button next to them.
+- **Listen** (next to Live screen, or ⌥⌘L) transcribes the shared Mac's computer audio. See [Listening](#listening-to-the-shared-macs-audio).
 - The toolbar model menu switches provider, model and reasoning effort. The **Reasoning** chip under the message field changes the reasoning level (Fast, Balanced, Thorough, Deep, Maximum) from your next question on, offering only the levels the current model supports.
 - The **Source** menu on the live view lets you choose which display, window or camera the other Mac shares (if it allows that).
 
@@ -45,6 +48,19 @@ It's built for moments like: your work laptop can't run AI tools but your person
 - The window shows exactly what's being shared, who's watching, and over which link.
 - **Send Snapshot** (⌃⌥S from any app) pushes a screenshot; **Send with Note…** (⌃⌥N) opens a small panel to add context first. The answer appears on the Studio and, optionally, on this Mac too.
 - **Pause** (⌃⌥P) stops all capture instantly. Sharing also pauses automatically while the Mac is locked.
+
+### Listening to the shared Mac's audio
+
+Turn on **Listen** in the composer (next to **Live screen**), or press ⌥⌘L. The shared Mac starts sending what it plays: the other people on a call, a video, anything but Tandem's own sounds and its microphone. The Studio transcribes it on-device. A two-line live caption above the skill buttons shows the words about a second after they're spoken. The ❝ button next to it opens the whole transcript, with timestamps, **Copy** and **Clear**.
+
+When someone asks you something out loud, press **Follow-up** (⌘3 in Tandem, or ⌃⌥F from any app). It sends the transcript, a fresh screenshot and the conversation so far. The answer starts with the question as Claude understood it, in italics with obvious speech-to-text mistakes fixed, followed by a direct answer in a few sentences. If you press it while the last words are still being recognized, Tandem waits a moment (up to 0.8 s) for them.
+
+- Each question carries what was said **since the thread's previous question**, up to 10 minutes (Settings › Listening › At most). Earlier transcripts stay with their messages, so later questions keep the whole conversation in mind. Each sent message shows a **Transcript · N words** chip you can expand.
+- Every question gets the transcript, not just Follow-up. Turn it off per skill in the skill's editor, or entirely in Settings › Listening.
+- **Speed:** a question asked in a thread that already has answers typically starts streaming about 1.5–2 s after you click, and the first question of a thread in about 2–2.5 s.
+- **Language:** Settings › Listening › Language (default: this Mac's). On macOS 26 Tandem uses Apple's SpeechAnalyzer; the first time a language is used, macOS may download its speech model, and the caption shows the progress. On macOS 14 and 15 it uses on-device speech recognition and asks for Speech Recognition permission once.
+- **Nothing to set up on the shared Mac.** Audio uses the same Screen & System Audio Recording permission as the picture. It runs only while the Studio listens, sharing is on and the Mac is unlocked. The shared Mac's window shows **Hearing this Mac's audio** under that Studio, and macOS shows its own recording indicator. To never send audio, turn off Settings › Sharing › *Let the other Mac hear this Mac's audio* on the shared Mac.
+- Both Macs need Tandem 1.3 or later. If the shared Mac is older, the caption says so; update it there with **Update Now**.
 
 ### Leaving the shared Mac alone
 
@@ -68,6 +84,8 @@ Releases live in the private GitHub repository, so each Mac needs read access to
 | Studio | ⌃⌥Space | Capture & ask |
 | Studio | ⌃⌥C | Capture to composer |
 | Studio | ⌃⌥A | Toggle auto-capture |
+| Studio | ⌃⌥F | Answer the follow-up (runs the Follow-up skill) |
+| Studio | ⌃⌥L | Listen to the shared Mac's audio (on/off) |
 | Both | ⌃⌥T | Show Tandem |
 
 ### Connections
@@ -84,6 +102,7 @@ If discovery is blocked (guest or corporate Wi-Fi with client isolation), use **
 - **Claude Code** answers run the `claude` command on the Studio Mac with its tools, plugins, hooks, MCP servers and CLAUDE.md files turned off, and Tandem's instructions in place of Claude Code's own. Nothing is saved to Claude Code's session history. Tandem never sees your Claude sign-in; the CLI uses its own.
 - **Not sandboxed.** Tandem runs outside the App Sandbox so it can use your installed Claude Code and its sign-in. It is signed with the hardened runtime, and still asks macOS for camera, screen recording and local network access.
 - **Capture** only runs while a paired Studio is actually watching (and never while paused or locked). macOS shows its screen-recording indicator whenever capture is active.
+- **Audio** is captured only while a paired Studio has **Listen** on, and never while sharing is paused or the shared Mac is locked. It travels over the same encrypted session and is transcribed on the Studio Mac; no audio is recorded, saved or sent to the AI. Only the transcript text goes along with your questions, and it's saved with the thread like the rest of the conversation.
 - **Screenshots** are sent only to the AI provider you configured, directly from the Studio Mac (through Claude Code when that's the provider). By default they are kept **in memory only**; turn on Settings › Privacy › *Keep screenshots after quitting* to keep them with history. Threads older than your retention setting are deleted automatically.
 - Tandem has no servers, accounts, analytics or telemetry.
 
@@ -94,12 +113,13 @@ If discovery is blocked (guest or corporate Wi-Fi with client isolation), use **
 - **"The pairing is no longer valid."** One Mac was reset or unpaired. Pair again from the Studio.
 - **Live view is off / paused.** The Studio pauses the stream while its window is hidden, and the Source pauses while it's locked or paused — snapshots and asking still work whenever the Source is sharing.
 - **AI errors.** Check the key in Settings › AI (the **Test** button lists your available models). Rate limits and overloads show a retry option on the message.
+- **Listen shows no words.** The caption says what's missing. The shared Mac may need an update, have audio sharing turned off, be paused or locked, or be missing Screen & System Audio Recording permission. If it says *Waiting for sound*, nothing is playing on the shared Mac. On macOS 14–15, allow Tandem in System Settings › Privacy & Security › Speech Recognition.
 
 ## Building from source
 
 ```bash
 brew install xcodegen
-scripts/test_all.sh          # core tests (300+) + app build with warnings as errors
+scripts/test_all.sh          # core tests (380+) + app build with warnings as errors + app tests
 open App/Tandem.xcodeproj     # after scripts/test_all.sh or `cd App && xcodegen generate`
 scripts/build-release.sh     # signed Release build → dist/Tandem-<version>.zip and .dmg
 scripts/release.sh minor     # new version: bump, test, build, tag, push, GitHub release
@@ -120,7 +140,13 @@ swift scripts/debug-command.swift B ask "What's on my screen?"   # Studio asks w
 swift scripts/debug-command.swift A push "Why is this red?"      # Source pushes a snapshot with a note
 swift scripts/debug-command.swift B auto 5                       # auto-capture every 5 s
 swift scripts/debug-command.swift B dump                         # log engine state (log show --predicate 'category == "Debug"')
+swift scripts/debug-command.swift B listen on                    # transcribe the Source's audio
+swift scripts/debug-command.swift B skill 3                      # press Follow-up
+swift scripts/debug-command.swift B transcript                   # log the live transcript
+swift scripts/debug-command.swift B lastAnswer                   # log the last question, its transcript and the answer
 ```
+
+To exercise listening without Screen Recording permission, give the Source a sound file to play in a loop as its "computer audio": `TANDEM_TEST_AUDIO=~/clip.aiff scripts/dev-two-macs.sh --mock-ai` (make one with `say -o ~/clip.aiff "…"`). Each question logs how long every step took (`log show --info --predicate 'category == "Chat"' | grep TANDEM-TIMING`).
 
 None of the debug hooks are compiled into Release builds. See [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md) and [docs/PROTOCOL.md](docs/PROTOCOL.md) for the design.
 

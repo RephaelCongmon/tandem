@@ -3,6 +3,7 @@ import AppKit
 import Foundation
 import os
 import TandemCore
+import TandemUI
 
 /// Debug-only remote control for automated end-to-end checks. A command is a
 /// distributed notification named `com.rofel.tandem.debug` whose object is
@@ -64,7 +65,7 @@ enum DebugCommands {
             model.settings.autoCaptureEnabled = false
             model.studio.restartAutomation()
         case "settings":
-            model.openSettingsAction?()
+            if argument.isEmpty { model.openSettingsAction?() } else { model.openSettings(tab: argument) }
         case "front":
             // Visible without taking keyboard focus from the app in use.
             for window in NSApp.windows where window.identifier?.rawValue == "main" || window.title == "Tandem" { window.orderFrontRegardless() }
@@ -104,6 +105,29 @@ enum DebugCommands {
             model.toasts.show(argument, systemImage: "sparkles")
         case "kick":
             for viewer in model.source.viewers { model.connections.disconnect(viewer.connection) }
+        case "hotkey":
+            if let action = HotkeyAction(rawValue: argument) { model.hotkeys.perform(action) }
+        case "listen":
+            model.studio.setListening(argument != "off")
+        case "transcript":
+            let transcription = model.studio.transcription
+            let logger = Logger(subsystem: "com.rofel.tandem", category: "Debug")
+            logger.notice("TANDEM-TRANSCRIPT engine=\(String(describing: transcription.engineState), privacy: .public) name=\(transcription.engineName ?? "-", privacy: .public) receiving=\(transcription.isReceivingAudio(), privacy: .public) level=\(transcription.level, privacy: .public) audio=\(String(describing: model.studio.sourceAudioStatus), privacy: .public) problem=\(model.studio.listeningProblem ?? "-", privacy: .public)")
+            for segment in transcription.transcript.segments.suffix(20) {
+                logger.notice("TANDEM-TRANSCRIPT [\(segment.start.formatted(date: .omitted, time: .standard), privacy: .public)] \(segment.text, privacy: .public)")
+            }
+            if let volatile = transcription.transcript.volatile {
+                logger.notice("TANDEM-TRANSCRIPT (volatile) \(volatile.text, privacy: .public)")
+            }
+        case "lastAnswer":
+            let logger = Logger(subsystem: "com.rofel.tandem", category: "Debug")
+            if let thread = model.chat.selectedThread {
+                for message in thread.messages.suffix(4) {
+                    let transcript = message.transcript.map { "transcript(\($0.segments.count) seg, pending=\($0.pendingText ?? "-")): \($0.plainText)" } ?? "-"
+                    let flat = { (text: String) in text.replacingOccurrences(of: "\n", with: " ⏎ ") }
+                    logger.notice("TANDEM-ANSWER \(message.role.rawValue, privacy: .public) skill=\(message.skill?.title ?? "-", privacy: .public) first=\(message.firstTokenSeconds ?? -1, privacy: .public) total=\(message.totalSeconds ?? -1, privacy: .public) \(flat(transcript), privacy: .public) || \(flat(message.text), privacy: .public)")
+                }
+            }
         case "dump":
             dump(model: model)
         case "snap":
@@ -156,6 +180,8 @@ enum DebugCommands {
         lines.append("studio.liveStats=\(studio.liveStats)")
         lines.append("source.viewers=\(source.viewers.map { "\($0.name) approved=\($0.approved) watching=\($0.isWatching) request=\(String(describing: $0.streamRequest))" })")
         lines.append("source.captureState=\(source.captureState) streaming=\(source.isStreaming) stats=\(source.streamStats)")
+        lines.append("source.screenPermission=\(source.hasScreenPermission) preflight=\(CGPreflightScreenCaptureAccess())")
+        lines.append("source.audio=\(source.audioState) listeners=\(source.audioListenerIDs.count) requests=\(source.viewers.map { String(describing: $0.audioRequest) })")
         lines.append("chat.threads=\(model.chat.threads.count) streaming=\(model.chat.streaming != nil) banner=\(model.chat.banner ?? "-")")
         lines.append("auto=\(model.settings.autoCaptureEnabled) last=\(studio.lastAutoResult ?? "-")")
         // Logged (not written to the container) so tools can read it without

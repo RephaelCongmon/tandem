@@ -156,10 +156,18 @@ final class AppModel {
         switch role {
         case .source:
             studio.chat.stop()
+            studio.transcription.suspend()
+            ClaudeCodeSessionPool.shared.removeAll()
             source.activate()
         case .studio:
             source.deactivate()
             claudeCode.refreshInBackground()
+            studio.transcription.resume()
+            // Once Claude Code has been found, have it running before the first question.
+            Task { @MainActor [weak self] in
+                try? await Task.sleep(nanoseconds: 3_000_000_000)
+                self?.studio.chat.prewarm()
+            }
         }
         // Sessions established during onboarding are handed to the engine now.
         for connection in connections.establishedConnections { route(connection) }
@@ -185,6 +193,7 @@ final class AppModel {
     func resetOnboarding() {
         connections.deactivate()
         source.deactivate()
+        studio.transcription.suspend()
         hotkeys.unregisterAll()
         settings.role = nil
         updateActivity()
@@ -272,6 +281,7 @@ final class AppModel {
 
     func prepareForTermination() {
         studio.chat.stop()
+        ClaudeCodeSessionPool.shared.removeAll()
         studio.chat.flush()
         connections.deactivate()
         hotkeys.unregisterAll()

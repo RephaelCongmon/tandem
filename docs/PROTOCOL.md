@@ -59,6 +59,9 @@ After the handshake, every frame payload is `ciphertext ‖ tag` (ChaCha20-Poly1
 | 2 | videoFormat | codec u8, width u16, height u16, count u8, then `count × (len u16, parameter set)` |
 | 3 | videoFrame | flags u8 (bit 0 keyframe), sequence u32, pts µs u64, capturedAt ns u64, AVCC access unit |
 | 4 | snapshotChunk | snapshot UUID (16 B), index u32, count u32, bytes |
+| 5 | audioPacket | codec u8 (1 Opus, 2 PCM16 LE), sequence u32, sample rate u32, sample count u32, capturedAt ns u64 (Source clock, first sample), count u8, then `count × (len u16, frame)` |
+
+Audio is mono 16 kHz. Opus frames are 20 ms (32 kbps), and a packet carries five of them (100 ms). PCM16 is the fallback when a Mac can't encode Opus.
 
 ### Control messages
 
@@ -71,16 +74,21 @@ After the handshake, every frame payload is `ciphertext ‖ tag` (ChaCha20-Poly1
 - `sourceCatalogRequest`, `sourceCatalog`, `selectSource`
 - `automationStatus`
 - `replyMirror`
+- `audioRequest {enabled, codecs}` (Studio → Source): start or stop sending computer audio; `codecs` lists what the Studio can decode, best first
+- `audioStatus {state, message, codec, sampleRate}` (Source → Studio): `off`, `starting`, `live`, `paused`, `needsPermission`, `notAllowed` or `error`
 - `ping`/`pong` (NTP-style clock offset)
 - `goodbye`
 
-Unknown messages are ignored, so newer peers can add them.
+Unknown messages are ignored, so newer peers can add them. `hello.capabilities` advertises optional features: `"audio"` means the peer can send (Source) or transcribe (Studio) computer audio. A Studio uses it to tell the user that an older Source needs an update.
 
 ### Scheduling
 
-`PeerLink` keeps three queues:
+`PeerLink` keeps four queues:
 - **control** (acks, requests, status): sent first;
-- **bulk** (snapshots): sent next;
+- **audio** (audio packets): next, so transcripts stay live behind a large snapshot;
+- **bulk** (snapshots): next;
 - **video**: sent last.
+
+A Source stops queuing audio for a link that already has 50 packets (5 s) waiting, rather than let stale audio pile up.
 
 Records are sealed when they're handed to the transport, so counters always match wire order.

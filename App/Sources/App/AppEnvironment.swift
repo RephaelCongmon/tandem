@@ -104,6 +104,26 @@ enum AppEnvironment {
         #endif
     }
 
+    /// Development-only: the Source plays this sound file in a loop instead of capturing system
+    /// audio (`-TandemTestAudio /path/to/file.aiff`).
+    static var testAudioFile: URL? {
+        #if DEBUG
+        guard let path = UserDefaults.standard.string(forKey: "TandemTestAudio"), !path.isEmpty else { return nil }
+        return URL(fileURLWithPath: (path as NSString).expandingTildeInPath)
+        #else
+        return nil
+        #endif
+    }
+
+    /// Development-only: use SFSpeechRecognizer even where SpeechAnalyzer is available.
+    static var preferLegacySpeech: Bool {
+        #if DEBUG
+        return UserDefaults.standard.bool(forKey: "TandemLegacySpeech")
+        #else
+        return false
+        #endif
+    }
+
     /// Development-only: override the AI base URL (e.g. a local mock server).
     static var debugAIBaseURL: URL? {
         #if DEBUG

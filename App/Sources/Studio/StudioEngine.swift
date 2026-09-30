@@ -21,7 +21,7 @@ enum SnapshotRequestError: Error, LocalizedError {
     }
 }
 
-/// The Studio Mac: live view, snapshots, automation, and the chat.
+/// The Studio Mac: live view, snapshots, automation, the live transcript, and the chat.
 @MainActor
 @Observable
 final class StudioEngine {
@@ -37,6 +37,8 @@ final class StudioEngine {
 
     private(set) var connection: PeerConnection?
     private(set) var sourceStatus: SourceStatus?
+    /// Whether the Source is sending its audio (nil until it reports).
+    private(set) var sourceAudioStatus: AudioStatus?
     private(set) var remoteCatalog: [CaptureSourceDescriptor] = []
     private(set) var liveStats = LiveStats()
     private(set) var hasVideo = false
@@ -56,6 +58,7 @@ final class StudioEngine {
     @ObservationIgnored private var autoAsks: [Date] = []
 
     let chat: ChatController
+    let transcription: TranscriptionService
     @ObservationIgnored let renderer = LiveVideoRenderer()
     @ObservationIgnored private let settings: SettingsStore
     private struct PendingSnapshot {
@@ -72,7 +75,9 @@ final class StudioEngine {
     init(settings: SettingsStore, keys: APIKeyStore, claudeCodeExecutable: @escaping @MainActor () -> URL? = { nil }) {
         self.settings = settings
         chat = ChatController(settings: settings, keys: keys, claudeCodeExecutable: claudeCodeExecutable)
+        transcription = TranscriptionService(settings: settings)
         chat.studio = self
+        chat.transcription = transcription
         renderer.onStats = { [weak self] stats in self?.liveStats = stats }
         renderer.onFirstFrame = { [weak self] in self?.hasVideo = true }
     }
@@ -113,6 +118,13 @@ final class StudioEngine {
         let renderer = self.renderer
         let link = connection.link
         connection.videoSink.value = { message in renderer.handle(message, link: link) }
+        let pipeline = transcription.pipeline
+        connection.audioSink.value = { [weak link] packet in
+            // Called on the link queue, where the link's clock offset (peer − local) lives.
+            let offset = link?.stats.clockOffsetNanos ?? 0
+            let local = min(Int64(bitPattern: packet.capturedAtNanos) - offset, Int64(bitPattern: wallClockNanos()))
+            pipeline.receive(packet, capturedAt: Date(timeIntervalSince1970: Double(local) / 1_000_000_000))
+        }
         connection.onControl = { [weak self] message in self?.handle(message) }
         connection.onSnapshot = { [weak self] snapshot in self?.received(snapshot) }
         connection.onSnapshotRejected = { [weak self] id, reason in
@@ -124,8 +136,10 @@ final class StudioEngine {
             entry.deadline = Date().addingTimeInterval(entry.idleTimeout)
             self.pending[progress.id] = entry
         }
+        sourceAudioStatus = nil
         sendStreamRequest()
         sendAutomationStatus()
+        sendAudioRequest()
         connection.send(.control(.sourceCatalogRequest))
         restartAutomation()
     }
@@ -133,12 +147,14 @@ final class StudioEngine {
     func detach(_ connection: PeerConnection) {
         guard self.connection?.id == connection.id else { return }
         connection.videoSink.value = nil
+        connection.audioSink.value = nil
         connection.onControl = nil
         connection.onSnapshot = nil
         connection.onSnapshotProgress = nil
         connection.onSnapshotRejected = nil
         self.connection = nil
         sourceStatus = nil
+        sourceAudioStatus = nil
         remoteCatalog = []
         hasVideo = false
         liveStats = LiveStats()
@@ -162,6 +178,8 @@ final class StudioEngine {
             }
         case .sourceCatalog(let catalog):
             remoteCatalog = catalog
+        case .audioStatus(let status):
+            sourceAudioStatus = status
         case .snapshotUnchanged(let id):
             resolve(id, with: .failure(SnapshotRequestError.unchanged))
         case .snapshotFailed(let id, let reason):
@@ -187,6 +205,40 @@ final class StudioEngine {
         case .attachToComposer:
             chat.addToComposer(snapshot, sourceName: sourceName)
             if let note, !note.isEmpty, chat.composerText.isEmpty { chat.composerText = note }
+        }
+    }
+
+    // MARK: Listening
+
+    /// Turns the live transcript of the shared Mac's audio on or off.
+    func setListening(_ listening: Bool) {
+        transcription.setEnabled(listening)
+        sendAudioRequest()
+        if listening { chat.prewarm() }
+    }
+
+    /// Codecs this Mac can decode, best first.
+    static let decodableAudioCodecs: [LiveAudioCodec] = LiveAudioCodec.allCases.filter { AudioFrameDecoder(codec: $0) != nil }
+
+    func sendAudioRequest() {
+        guard let connection, connection.isConnected else { return }
+        connection.send(.control(.audioRequest(AudioRequest(enabled: settings.listen, codecs: Self.decodableAudioCodecs))))
+    }
+
+    /// Why the transcript isn't getting audio right now, if it isn't.
+    var listeningProblem: String? {
+        guard settings.listen else { return nil }
+        if case .failed(let message) = transcription.engineState { return message }
+        guard let connection, connection.isConnected else { return nil }
+        if connection.remoteHello != nil, !connection.peerSupportsAudio {
+            return "\(sourceName ?? "The shared Mac") needs Tandem 1.3 or later to send its audio. Update it there with Update Now."
+        }
+        guard let status = sourceAudioStatus else { return nil }
+        switch status.state {
+        case .needsPermission, .notAllowed, .error, .paused:
+            return status.message ?? "The shared Mac isn't sending audio."
+        case .off, .starting, .live:
+            return nil
         }
     }
 

@@ -73,6 +73,22 @@ final class HotkeyController {
                 model.settings.autoCaptureEnabled ? "Auto-capture on (every \(Formatters.interval(model.settings.autoCaptureInterval)))" : "Auto-capture off",
                 systemImage: model.settings.autoCaptureEnabled ? "timer" : "timer.circle"
             )
+        case .answerFollowUp:
+            guard !model.chat.isBusy else {
+                model.toasts.show("Still answering the previous question", systemImage: "hourglass", style: .warning)
+                return
+            }
+            let followUp = model.settings.skills.first { $0.id == PromptSkill.defaults[2].id }
+                ?? model.settings.skills.first { $0.title.localizedCaseInsensitiveContains("follow") }
+                ?? PromptSkill.defaults[2]
+            model.chat.send(skill: followUp)
+            model.toasts.show("Answering the follow-up…", systemImage: followUp.symbol)
+        case .toggleListening:
+            model.studio.setListening(!model.settings.listen)
+            model.toasts.show(
+                model.settings.listen ? "Listening to the shared Mac" : "Stopped listening",
+                systemImage: model.settings.listen ? "waveform" : "waveform.slash"
+            )
         case .showTandem:
             model.showMainWindow()
         }

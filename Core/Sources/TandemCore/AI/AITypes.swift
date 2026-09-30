@@ -119,6 +119,22 @@ public struct AIEndpoint: Sendable, Hashable {
 }
 
 /// One request for a streamed completion.
+/// Which conversation a request continues, so a provider that keeps a live session (Claude Code)
+/// can send just the new message when it already holds the rest.
+public struct AIConversationKey: Sendable, Hashable {
+    public var conversationID: UUID
+    /// The messages behind `turns`, oldest first; the last one is the new question.
+    public var messageIDs: [UUID]
+    /// The message the reply will be saved as.
+    public var replyID: UUID
+
+    public init(conversationID: UUID, messageIDs: [UUID], replyID: UUID) {
+        self.conversationID = conversationID
+        self.messageIDs = messageIDs
+        self.replyID = replyID
+    }
+}
+
 public struct AIRequest: Sendable, Hashable {
     public var model: String
     public var systemPrompt: String
@@ -128,6 +144,7 @@ public struct AIRequest: Sendable, Hashable {
     public var effort: ReasoningEffort?
     /// Ask the provider for a readable reasoning summary, streamed as `.reasoningDelta`.
     public var includeReasoningSummary: Bool
+    public var conversation: AIConversationKey?
 
     public init(
         model: String,
@@ -135,7 +152,8 @@ public struct AIRequest: Sendable, Hashable {
         turns: [AITurn],
         maxOutputTokens: Int = 32_000,
         effort: ReasoningEffort? = .low,
-        includeReasoningSummary: Bool = true
+        includeReasoningSummary: Bool = true,
+        conversation: AIConversationKey? = nil
     ) {
         self.model = model
         self.systemPrompt = systemPrompt
@@ -143,6 +161,7 @@ public struct AIRequest: Sendable, Hashable {
         self.maxOutputTokens = maxOutputTokens
         self.effort = effort
         self.includeReasoningSummary = includeReasoningSummary
+        self.conversation = conversation
     }
 }
 

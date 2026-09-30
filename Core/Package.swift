@@ -9,7 +9,7 @@ let package = Package(
         .library(name: "TandemUI", targets: ["TandemUI"])
     ],
     targets: [
-        // Networking, security, media, AI clients, markdown parsing. No SwiftUI.
+        // Networking, security, media, speech, AI clients, markdown parsing. No SwiftUI.
         .target(
             name: "TandemCore",
             linkerSettings: [
@@ -21,7 +21,9 @@ let package = Package(
                 .linkedFramework("ImageIO"),
                 .linkedFramework("Security"),
                 .linkedFramework("IOKit"),
-                .linkedFramework("SystemConfiguration")
+                .linkedFramework("SystemConfiguration"),
+                .linkedFramework("AVFAudio"),
+                .linkedFramework("Speech")
             ]
         ),
         // Reusable SwiftUI/AppKit components: design system, markdown view,

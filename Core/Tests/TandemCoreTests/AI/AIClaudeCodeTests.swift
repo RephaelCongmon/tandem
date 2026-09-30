@@ -268,8 +268,106 @@ final class AIClaudeCodeTests: XCTestCase {
         return url
     }
 
-    private func client(_ executable: URL, idleTimeout: TimeInterval = 30) -> ClaudeCodeClient {
-        ClaudeCodeClient(executable: executable, environment: ["PATH": "/usr/bin:/bin"], workingDirectory: scratch.appendingPathComponent("cwd"), idleTimeout: idleTimeout)
+    private func client(_ executable: URL, idleTimeout: TimeInterval = 30, pool: ClaudeCodeSessionPool? = nil) -> ClaudeCodeClient {
+        ClaudeCodeClient(executable: executable, environment: ["PATH": "/usr/bin:/bin"], workingDirectory: scratch.appendingPathComponent("cwd"), idleTimeout: idleTimeout, pool: pool)
+    }
+
+    // MARK: Live sessions
+
+    /// A fake CLI that answers every stdin line, recording the line and its process id.
+    private func conversationalCLI() throws -> URL {
+        let output = scratch.appendingPathComponent("out.jsonl")
+        try (successLines.joined(separator: "\n") + "\n").write(to: output, atomically: true, encoding: .utf8)
+        return try fakeCLI(#"while IFS= read -r line; do printf '%s\n' "$line" >> "\#(scratch.path)/stdin.jsonl"; echo $$ >> "\#(scratch.path)/pids"; cat "\#(output.path)"; done"#)
+    }
+
+    private func recorded(_ name: String) throws -> [String] {
+        try String(contentsOf: scratch.appendingPathComponent(name), encoding: .utf8).split(separator: "\n").map(String.init)
+    }
+
+    func testFollowUpsReuseTheLiveSessionAndSendOnlyTheNewMessage() async throws {
+        let executable = try conversationalCLI()
+        let pool = ClaudeCodeSessionPool()
+        defer { pool.removeAll() }
+        let thread = UUID(), u1 = UUID(), a1 = UUID(), u2 = UUID(), a2 = UUID()
+
+        var first = aiTestRequest(model: "claude-opus-5-5")
+        first.conversation = AIConversationKey(conversationID: thread, messageIDs: [u1], replyID: a1)
+        let one = await aiTestCollect(client(executable, pool: pool).stream(first))
+        XCTAssertNil(one.error)
+        XCTAssertEqual(pool.liveConversationID, thread, "kept for the next question")
+
+        var second = first
+        second.turns = first.turns + [.assistant("It wants a password."), .user(.text("And the second field?"))]
+        second.conversation = AIConversationKey(conversationID: thread, messageIDs: [u1, a1, u2], replyID: a2)
+        let two = await aiTestCollect(client(executable, pool: pool).stream(second))
+        XCTAssertNil(two.error)
+        XCTAssertEqual(two.events.aiTestText, "It wants a password.")
+
+        let lines = try recorded("stdin.jsonl")
+        XCTAssertEqual(lines.count, 2)
+        XCTAssertEqual(lines[0] + "\n", String(decoding: try ClaudeCodeClient.inputLine(for: first), as: UTF8.self))
+        let followUp = try ClaudeCodeClient.inputLine(content: ClaudeCodeClient.content(of: [.user(.text("And the second field?"))]))
+        XCTAssertEqual(lines[1] + "\n", String(decoding: followUp, as: UTF8.self), "only the new message")
+        let pids = try recorded("pids")
+        XCTAssertEqual(pids.count, 2)
+        XCTAssertEqual(pids[0], pids[1], "the same process answered both")
+    }
+
+    func testAChangedConversationStartsAFreshProcess() async throws {
+        let executable = try conversationalCLI()
+        let pool = ClaudeCodeSessionPool()
+        defer { pool.removeAll() }
+        let thread = UUID(), u1 = UUID(), a1 = UUID()
+
+        var first = aiTestRequest(model: "claude-opus-5-5")
+        first.conversation = AIConversationKey(conversationID: thread, messageIDs: [u1], replyID: a1)
+        _ = await aiTestCollect(client(executable, pool: pool).stream(first))
+
+        // The reply was retried, so the thread no longer matches what the CLI holds.
+        var retried = first
+        retried.turns = first.turns + [.assistant("Something else."), .user(.text("Next?"))]
+        retried.conversation = AIConversationKey(conversationID: thread, messageIDs: [u1, UUID(), UUID()], replyID: UUID())
+        let result = await aiTestCollect(client(executable, pool: pool).stream(retried))
+        XCTAssertNil(result.error)
+        let lines = try recorded("stdin.jsonl")
+        XCTAssertEqual(lines.last.map { $0 + "\n" }, String(decoding: try ClaudeCodeClient.inputLine(for: retried), as: UTF8.self), "the whole conversation, folded")
+        let pids = try recorded("pids")
+        XCTAssertNotEqual(pids.first, pids.last)
+    }
+
+    func testASpareProcessIsReadyForTheNextConversation() async throws {
+        let executable = try conversationalCLI()
+        let pool = ClaudeCodeSessionPool()
+        defer { pool.removeAll() }
+        client(executable, pool: pool).prewarm(for: aiTestRequest(model: "claude-opus-5-5"))
+        await aiTestWait("a spare starts") { pool.hasSpare }
+
+        var request = aiTestRequest(model: "claude-opus-5-5")
+        request.conversation = AIConversationKey(conversationID: UUID(), messageIDs: [UUID()], replyID: UUID())
+        let result = await aiTestCollect(client(executable, pool: pool).stream(request))
+        XCTAssertNil(result.error)
+        await aiTestWait("another spare starts for the next one") { pool.hasSpare }
+
+        // A different model can't use it.
+        var other = aiTestRequest(model: "claude-sonnet-5-5")
+        other.conversation = AIConversationKey(conversationID: UUID(), messageIDs: [UUID()], replyID: UUID())
+        let otherResult = await aiTestCollect(client(executable, pool: pool).stream(other))
+        XCTAssertNil(otherResult.error)
+        let pids = try recorded("pids")
+        XCTAssertEqual(pids.count, 2)
+        XCTAssertNotEqual(pids[0], pids[1], "the other model got its own process")
+    }
+
+    func testAFailedAnswerEndsTheSession() async throws {
+        let executable = try fakeCLI(#"while IFS= read -r line; do echo '{"type":"result","subtype":"error","is_error":true,"result":"Overloaded"}'; done"#)
+        let pool = ClaudeCodeSessionPool()
+        defer { pool.removeAll() }
+        var request = aiTestRequest(model: "claude-opus-5-5")
+        request.conversation = AIConversationKey(conversationID: UUID(), messageIDs: [UUID()], replyID: UUID())
+        let result = await aiTestCollect(client(executable, pool: pool).stream(request))
+        XCTAssertNotNil(result.error)
+        XCTAssertNil(pool.liveConversationID, "a failed answer isn't kept")
     }
 
     func testStreamsThroughTheCLIAndSendsTheConversationOnStdin() async throws {

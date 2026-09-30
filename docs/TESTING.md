@@ -7,10 +7,11 @@ scripts/test_all.sh
 ```
 
 It runs:
-- **352 core tests** (plus one opt-in live check). Wire codec, secure handshake (including man-in-the-middle, tamper and replay), real-TCP loopback sessions, H.264 encode→decode, image codec, context building, stores, AI clients against recorded streams, Markdown, Bluetooth stream transport, markup renderer and editor, hotkeys.
-  - The Claude Code client is tested against recorded CLI output and a fake `claude` script: streaming, stdin contents, errors, a CLI that quits without reading, cancellation, and idle timeout.
+- **385 core tests** (plus opt-in live checks). Wire codec, secure handshake (including man-in-the-middle, tamper and replay), real-TCP loopback sessions, H.264 encode→decode, image codec, context building, stores, AI clients against recorded streams, Markdown, Bluetooth stream transport, markup renderer and editor, hotkeys.
+  - Listening: audio messages on the wire, Opus and PCM round trips, packetizing, gain and levels, the audio timeline, transcript excerpts and their context text, skills that carry transcripts, and a **live on-device transcription** of a sentence spoken by `say`, streamed in 100 ms chunks (macOS 26; the SFSpeechRecognizer variant runs only where that permission was granted).
+  - The Claude Code client is tested against recorded CLI output and a fake `claude` script: streaming, stdin contents, errors, a CLI that quits without reading, cancellation, idle timeout, and live sessions (a follow-up reuses the process and sends only the new message; a changed history starts over; the spare process; a failed answer isn't kept).
   - `TANDEM_LIVE_CLAUDE=1 swift test --filter AIClaudeCodeLiveTests` (in `Core/`) checks the real installed CLI's version and sign-in.
-- **9 app tests.** Chat streaming, failure/retry, stop, snapshots, busy handling, settings persistence, hotkey overrides.
+- **14 app tests.** Chat streaming, failure/retry, stop, snapshots, busy handling, settings persistence, hotkey overrides, converting ScreenCaptureKit audio buffers, and transcripts attached to questions (Follow-up carries the spoken question, then only newer speech; nothing when Listen or the setting is off).
 - **An app build** that fails on any warning.
 
 ## One-Mac end-to-end (what was verified during development)
@@ -30,7 +31,9 @@ Verified this way:
 - streamed Markdown rendering, the reasoning disclosure, and reply mirroring to the Source;
 - Source push with a note, and the quick-note panel;
 - auto-capture every 5 s with "No change" detection and a 4-image context window;
-- the markup editor, onboarding steps, and every Settings pane (rendered in-app with `snap`).
+- the markup editor, onboarding steps, and every Settings pane (rendered in-app with `snap`);
+- **listening**, with `TANDEM_TEST_AUDIO` playing a two-question meeting clip on the Source. Captions follow the speech. **Follow-up** pressed about a second after each question got the complete question, and only the new speech the second time. Claude restated it with speech-to-text mistakes fixed ("cash invalidation" → cache invalidation) and answered, with first words 2.3 s after the click for a new thread and 1.7 s in a thread with a live Claude Code session;
+- the app's real `AudioCaptureService`, compiled into a harness running with the terminal's Screen Recording permission, capturing system audio while `afplay` played the clip. The audio went through Opus and the wire codec, and the full transcript came out (about 21 kbps).
 
 ## Two-Mac hardware checklist
 
@@ -59,11 +62,18 @@ These need two real Macs (and permissions only a person can grant):
    - Pause on the Source: the Studio shows *Sharing is paused* and snapshots are refused.
    - Lock the Source: sharing pauses and resumes on unlock.
    - With "Keep screenshots" off, relaunching the Studio shows *Not kept* placeholders.
-8. **Real AI.**
+8. **Listening.**
+   - Join a call or play a video on the Source. On the Studio, turn on **Listen**: the caption shows the speech about a second behind, and the Source's window shows *Hearing this Mac's audio*.
+   - Have someone ask a question, press **Follow-up**: the answer restates that question and answers it.
+   - Ask a second question in the same thread: its **Transcript** chip holds only the newer speech.
+   - Pause or lock the Source: the caption explains why there's no audio, and it resumes afterwards.
+   - Turn off Settings › Sharing › *Let the other Mac hear this Mac's audio* on the Source: the Studio says audio sharing is off.
+   - On a Studio running macOS 14 or 15, the first Listen asks for Speech Recognition permission.
+9. **Real AI.**
    - With Claude Code signed in on the Studio, Settings › AI shows the account and plan. **Test** answers in a few seconds. Sign out (`claude auth logout`): the chat shows how to sign in again.
    - Add an Anthropic key, press **Test** in Settings › AI, then ask with a screenshot.
    - Repeat with an OpenAI key.
    - Try an OpenAI-compatible local server (LM Studio at `http://localhost:1234/v1`).
-9. **Sleep/wake.** Sleep the Studio, wake it: it reconnects on its own.
-10. **Background Source.** Turn on **Open at login** on the Source, log out and in: no window appears, the menu bar icon does, and the Studio connects. Clicking the Dock icon or **Open Tandem** shows the window.
-11. **Updates.** With an older version installed, **Tandem › Check for Updates…** shows the toolbar's **Update** button and its panel. **Update Now** replaces the app and relaunches the new version; from a disk image, it installs into Applications. Without GitHub access, Settings › General › Updates explains how to add it.
+10. **Sleep/wake.** Sleep the Studio, wake it: it reconnects on its own.
+11. **Background Source.** Turn on **Open at login** on the Source, log out and in: no window appears, the menu bar icon does, and the Studio connects. Clicking the Dock icon or **Open Tandem** shows the window.
+12. **Updates.** With an older version installed, **Tandem › Check for Updates…** shows the toolbar's **Update** button and its panel. **Update Now** replaces the app and relaunches the new version; from a disk image, it installs into Applications. Without GitHub access, Settings › General › Updates explains how to add it.

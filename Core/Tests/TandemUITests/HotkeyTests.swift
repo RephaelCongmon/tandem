@@ -267,7 +267,7 @@ final class HotkeyTests: XCTestCase {
 
     func testHotkeyActionRoles() {
         XCTAssertEqual(HotkeyAction.actions(for: .source), [.sendSnapshot, .sendSnapshotWithNote, .pauseSharing, .showTandem])
-        XCTAssertEqual(HotkeyAction.actions(for: .studio), [.captureAndAsk, .captureToComposer, .toggleAutoCapture, .showTandem])
+        XCTAssertEqual(HotkeyAction.actions(for: .studio), [.captureAndAsk, .captureToComposer, .toggleAutoCapture, .answerFollowUp, .toggleListening, .showTandem])
         XCTAssertEqual(HotkeyAction.actions(for: .both), HotkeyAction.allCases)
         XCTAssertEqual(HotkeyAction.showTandem.role, .both)
     }

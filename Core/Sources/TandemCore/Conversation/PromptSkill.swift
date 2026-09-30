@@ -1,8 +1,8 @@
 import Foundation
 
 /// A one-click instruction set for a kind of question (e.g. "Debug"), sent with a fresh
-/// screenshot and anything the user typed. The thread shows the skill's name; the model gets
-/// its full instructions.
+/// screenshot, the latest audio transcript and anything the user typed. The thread shows the
+/// skill's name; the model gets its full instructions.
 public struct PromptSkill: Codable, Sendable, Hashable, Identifiable {
     public var id: UUID
     public var title: String
@@ -11,13 +11,31 @@ public struct PromptSkill: Codable, Sendable, Hashable, Identifiable {
     public var instructions: String
     /// Attach a fresh screenshot of the shared screen (when Live screen is on).
     public var attachesScreenshot: Bool
+    /// Attach what was said on the shared Mac's audio since the last message (when listening).
+    public var attachesTranscript: Bool
 
-    public init(id: UUID = UUID(), title: String, symbol: String, instructions: String, attachesScreenshot: Bool = true) {
+    public init(id: UUID = UUID(), title: String, symbol: String, instructions: String, attachesScreenshot: Bool = true, attachesTranscript: Bool = true) {
         self.id = id
         self.title = title
         self.symbol = symbol
         self.instructions = instructions
         self.attachesScreenshot = attachesScreenshot
+        self.attachesTranscript = attachesTranscript
+    }
+
+    private enum CodingKeys: String, CodingKey {
+        case id, title, symbol, instructions, attachesScreenshot, attachesTranscript
+    }
+
+    /// Skills saved by older versions lack the newer switches; they default to on.
+    public init(from decoder: Decoder) throws {
+        let container = try decoder.container(keyedBy: CodingKeys.self)
+        id = try container.decode(UUID.self, forKey: .id)
+        title = try container.decode(String.self, forKey: .title)
+        symbol = try container.decode(String.self, forKey: .symbol)
+        instructions = try container.decode(String.self, forKey: .instructions)
+        attachesScreenshot = try container.decodeIfPresent(Bool.self, forKey: .attachesScreenshot) ?? true
+        attachesTranscript = try container.decodeIfPresent(Bool.self, forKey: .attachesTranscript) ?? true
     }
 
     /// What the model receives: the instructions, then the user's own words, if any.
@@ -55,7 +73,7 @@ public struct PromptSkill: Codable, Sendable, Hashable, Identifiable {
             symbol: "lightbulb",
             instructions: """
             This is a new problem. Give me analysis and guidance.
-            1. Restate the problem in a sentence or two: what's given, what's asked, and any constraints visible on the screen. Flag anything ambiguous and the assumption you'd make.
+            1. Restate the problem in a sentence or two: what's given, what's asked, and any constraints, from the screen and from what was said in the audio transcript. Flag anything ambiguous and the assumption you'd make.
             2. Lay out one or two ways to approach it, with their trade-offs, and recommend one.
             3. Walk through the recommended approach step by step, including edge cases and common pitfalls.
             Keep it structured and easy to scan.
@@ -66,8 +84,39 @@ public struct PromptSkill: Codable, Sendable, Hashable, Identifiable {
             title: "Follow-up",
             symbol: "arrowshape.turn.up.left",
             instructions: """
-            There's a follow-up question on the screen, usually the most recent question or message. Find it and work out what it's asking, using what's on the screen and our conversation so far. Then answer it in plain text: no headings, lists or preamble, just a direct answer in a few sentences. If you can't find a follow-up question on the screen, say so in one sentence.
+            Someone just asked me a follow-up question. Find it: first in the live transcript of the computer audio (usually the last question someone asked out loud), otherwise on the screen (usually the most recent question or message). Work out what it's asking, using the transcript, the screen and our conversation so far.
+            Put the question as you understood it on the first line, in italics, with obvious speech-to-text mistakes fixed. Then answer it in plain text: no headings, lists or preamble, just a direct answer in a few sentences. If you can't find a follow-up question in the transcript or on the screen, say so in one sentence.
             """
         )
     ]
+
+    /// Built-in instructions from earlier versions, by skill id.
+    static let previousDefaultInstructions: [UUID: Set<String>] = [
+        UUID(uuidString: "5D1B6A2E-0C3F-4A7E-9C10-6B7A1D2E0002")!: [
+            """
+            This is a new problem. Give me analysis and guidance.
+            1. Restate the problem in a sentence or two: what's given, what's asked, and any constraints visible on the screen. Flag anything ambiguous and the assumption you'd make.
+            2. Lay out one or two ways to approach it, with their trade-offs, and recommend one.
+            3. Walk through the recommended approach step by step, including edge cases and common pitfalls.
+            Keep it structured and easy to scan.
+            """
+        ],
+        UUID(uuidString: "5D1B6A2E-0C3F-4A7E-9C10-6B7A1D2E0003")!: [
+            """
+            There's a follow-up question on the screen, usually the most recent question or message. Find it and work out what it's asking, using what's on the screen and our conversation so far. Then answer it in plain text: no headings, lists or preamble, just a direct answer in a few sentences. If you can't find a follow-up question on the screen, say so in one sentence.
+            """
+        ]
+    ]
+
+    /// Saved skills with built-in wording from an earlier version get the current wording;
+    /// anything the user wrote or edited is left alone.
+    public static func upgradingBuiltIns(_ skills: [PromptSkill]) -> [PromptSkill] {
+        skills.map { skill in
+            guard let current = defaults.first(where: { $0.id == skill.id }),
+                  previousDefaultInstructions[skill.id]?.contains(skill.instructions) == true else { return skill }
+            var upgraded = skill
+            upgraded.instructions = current.instructions
+            return upgraded
+        }
+    }
 }

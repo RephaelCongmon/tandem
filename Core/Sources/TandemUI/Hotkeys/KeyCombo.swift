@@ -197,6 +197,10 @@ public extension KeyCombo {
     static let captureToComposer = KeyCombo(keyCode: UInt32(kVK_ANSI_C), modifiers: UInt32(controlKey | optionKey))
     /// ⌃⌥A
     static let toggleAutoCapture = KeyCombo(keyCode: UInt32(kVK_ANSI_A), modifiers: UInt32(controlKey | optionKey))
+    /// ⌃⌥F
+    static let answerFollowUp = KeyCombo(keyCode: UInt32(kVK_ANSI_F), modifiers: UInt32(controlKey | optionKey))
+    /// ⌃⌥L
+    static let toggleListening = KeyCombo(keyCode: UInt32(kVK_ANSI_L), modifiers: UInt32(controlKey | optionKey))
     /// ⌃⌥T
     static let showTandem = KeyCombo(keyCode: UInt32(kVK_ANSI_T), modifiers: UInt32(controlKey | optionKey))
 }
@@ -475,6 +479,8 @@ public enum HotkeyAction: String, CaseIterable, Codable, Sendable, Identifiable 
     case captureAndAsk
     case captureToComposer
     case toggleAutoCapture
+    case answerFollowUp
+    case toggleListening
     case showTandem
 
     /// Which side of a Tandem session an action applies to.
@@ -504,6 +510,8 @@ public enum HotkeyAction: String, CaseIterable, Codable, Sendable, Identifiable 
         case .captureAndAsk: return "Capture & ask"
         case .captureToComposer: return "Capture to composer"
         case .toggleAutoCapture: return "Toggle auto-capture"
+        case .answerFollowUp: return "Answer the follow-up"
+        case .toggleListening: return "Listen to the shared Mac"
         case .showTandem: return "Show Tandem"
         }
     }
@@ -523,6 +531,10 @@ public enum HotkeyAction: String, CaseIterable, Codable, Sendable, Identifiable 
             return "Attaches a capture of the live screen to the message you're writing."
         case .toggleAutoCapture:
             return "Turns automatic capturing of the live screen on or off."
+        case .answerFollowUp:
+            return "Runs the Follow-up skill: finds the question just asked out loud or on screen, and answers it."
+        case .toggleListening:
+            return "Turns the live transcript of the shared Mac's audio on or off."
         case .showTandem:
             return "Brings the Tandem window to the front."
         }
@@ -537,6 +549,8 @@ public enum HotkeyAction: String, CaseIterable, Codable, Sendable, Identifiable 
         case .captureAndAsk: return .captureAndAsk
         case .captureToComposer: return .captureToComposer
         case .toggleAutoCapture: return .toggleAutoCapture
+        case .answerFollowUp: return .answerFollowUp
+        case .toggleListening: return .toggleListening
         case .showTandem: return .showTandem
         }
     }
@@ -545,7 +559,7 @@ public enum HotkeyAction: String, CaseIterable, Codable, Sendable, Identifiable 
     public var role: Role {
         switch self {
         case .sendSnapshot, .sendSnapshotWithNote, .pauseSharing: return .source
-        case .captureAndAsk, .captureToComposer, .toggleAutoCapture: return .studio
+        case .captureAndAsk, .captureToComposer, .toggleAutoCapture, .answerFollowUp, .toggleListening: return .studio
         case .showTandem: return .both
         }
     }

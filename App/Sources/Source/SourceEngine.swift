@@ -6,7 +6,8 @@ import ScreenCaptureKit
 import TandemCore
 
 /// Everything the Source Mac does: capture, stream to viewers, answer snapshot
-/// requests, and push snapshots (with optional notes) on demand.
+/// requests, push snapshots (with optional notes) on demand, and send its computer audio to
+/// Studios that listen.
 @MainActor
 @Observable
 final class SourceEngine {
@@ -18,15 +19,24 @@ final class SourceEngine {
         case error(String)
     }
 
+    enum AudioState: Equatable {
+        case idle
+        case starting
+        case live
+        case error(String)
+    }
+
     struct Viewer: Identifiable {
         let id: UUID
         let connection: PeerConnection
         var approved: Bool
         var streamRequest: StreamRequest?
         var automation: AutomationStatus?
+        var audioRequest: AudioRequest?
 
         @MainActor var name: String { connection.peer?.name ?? "Studio" }
         var isWatching: Bool { approved && (streamRequest?.enabled ?? false) }
+        var wantsAudio: Bool { approved && (audioRequest?.enabled ?? false) }
     }
 
     struct PushFeedback: Equatable {
@@ -55,6 +65,11 @@ final class SourceEngine {
     private(set) var isPushing = false
     /// A snapshot captured when the note panel opened, sent when the note is submitted.
     private(set) var preparedPush: CGImage?
+    private(set) var audioState: AudioState = .idle
+    /// Studios this Mac is sending audio to right now.
+    private(set) var audioListenerIDs: Set<UUID> = []
+    /// Audio was stopped from the macOS menu bar; stays off until sharing is resumed.
+    private(set) var audioPauseReason: String?
 
     var pendingApprovals: [Viewer] { viewers.filter { !$0.approved } }
     var watchingCount: Int { viewers.filter(\.isWatching).count }
@@ -65,6 +80,14 @@ final class SourceEngine {
     @ObservationIgnored private let preview = Locked(false)
     @ObservationIgnored private let capture = CaptureService()
     @ObservationIgnored private let fanout = VideoFanout()
+    @ObservationIgnored private let audioCapture = AudioCaptureService()
+    @ObservationIgnored private lazy var audioFanout = AudioFanout(queue: audioCapture.queue)
+    @ObservationIgnored private var audioChain: Task<Void, Never>?
+    @ObservationIgnored private var audioGeneration = 0
+    @ObservationIgnored private var audioWanted = false
+    @ObservationIgnored private var audioRetries = 0
+    @ObservationIgnored private var audioCodecs: [UUID: LiveAudioCodec] = [:]
+    @ObservationIgnored private var lastAudioBroadcast: [UUID: AudioStatus] = [:]
     @ObservationIgnored private let settings: SettingsStore
     @ObservationIgnored private var lastFingerprints: [UUID: ImageCodec.Fingerprint] = [:]
     @ObservationIgnored private var captureChain: Task<Void, Never>?
@@ -93,6 +116,13 @@ final class SourceEngine {
         fanout.onStats = { [weak self] stats in
             onMain { self?.streamStats = stats }
         }
+        let audioFanout = self.audioFanout
+        audioCapture.onSamples = { samples, captured in
+            audioFanout.submit(samples, capturedAtNanos: captured)
+        }
+        audioCapture.onInterrupted = { [weak self] error in
+            onMain { self?.audioInterrupted(error) }
+        }
         observeLockState()
     }
 
@@ -107,6 +137,10 @@ final class SourceEngine {
         for viewer in viewers { fanout.removeViewer(id: viewer.id) }
         viewers.removeAll()
         stopCapture()
+        audioFanout.removeAll()
+        audioCodecs.removeAll()
+        lastAudioBroadcast.removeAll()
+        reconcileAudio()
     }
 
     func refreshPermission() {
@@ -181,8 +215,11 @@ final class SourceEngine {
         connection.ackSink.value = nil
         connection.onControl = nil
         fanout.removeViewer(id: connection.id)
+        audioFanout.setListener(id: connection.id, link: connection.link, codec: nil)
         viewers.removeAll { $0.id == connection.id }
         lastFingerprints[connection.id] = nil
+        lastAudioBroadcast[connection.id] = nil
+        audioCodecs[connection.id] = nil
         reconcile()
     }
 
@@ -222,6 +259,9 @@ final class SourceEngine {
             select(source)
         case .automationStatus(let status):
             viewers[index].automation = status
+        case .audioRequest(let request):
+            viewers[index].audioRequest = request
+            reconcileAudio()
         case .replyMirror(let reply):
             if settings.showRepliesOnSource, viewers[index].approved { lastReply = reply }
         default:
@@ -239,6 +279,7 @@ final class SourceEngine {
         isSharingEnabled = enabled
         if enabled {
             pauseReason = nil
+            audioPauseReason = nil
             if case .error = captureState { captureState = .idle }
         }
         reconcile()
@@ -342,6 +383,7 @@ final class SourceEngine {
             stopCapture()
         }
         broadcastStatus()
+        reconcileAudio()
     }
 
     private func startOrUpdateCapture(source: CaptureSourceID, config: CaptureConfig) {
@@ -425,6 +467,148 @@ final class SourceEngine {
         Task {
             await refreshCatalog()
             reconcile()
+        }
+    }
+
+    // MARK: Audio
+
+    /// "Let the other Mac hear this Mac's audio" changed.
+    func audioSettingChanged() {
+        audioPauseReason = nil
+        audioRetries = 0
+        reconcileAudio()
+    }
+
+    /// Starts or stops audio capture so that exactly the approved Studios that asked for audio
+    /// get it, and only while sharing is on and the Mac is unlocked.
+    private func reconcileAudio() {
+        let permitted = hasScreenPermission || AudioCaptureService.usesTestAudio
+        let canSend = isActive && settings.shareAudio && audioPauseReason == nil && permitted
+        var listeners: Set<UUID> = []
+        for viewer in viewers {
+            let codec = canSend && viewer.wantsAudio ? AudioFanout.codec(for: viewer.audioRequest?.codecs ?? []) : nil
+            if audioCodecs[viewer.id] != codec {
+                audioCodecs[viewer.id] = codec
+                audioFanout.setListener(id: viewer.id, link: viewer.connection.link, codec: codec)
+            }
+            if codec != nil { listeners.insert(viewer.id) }
+        }
+        if audioListenerIDs != listeners { audioListenerIDs = listeners }
+        if listeners.isEmpty { stopAudio() } else { startAudio() }
+        broadcastAudioStatus()
+    }
+
+    private func startAudio() {
+        guard !audioWanted else { return }
+        audioWanted = true
+        audioGeneration += 1
+        let generation = audioGeneration
+        audioState = .starting
+        let capture = audioCapture
+        let previous = audioChain
+        audioChain = Task { [weak self] in
+            await previous?.value
+            do {
+                try await capture.start()
+                guard let self, self.audioGeneration == generation else { return }
+                self.audioState = .live
+                self.audioRetries = 0
+            } catch {
+                guard let self, self.audioGeneration == generation else { return }
+                self.audioWanted = false
+                if case CaptureError.permissionDenied = error {
+                    self.hasScreenPermission = false
+                    self.audioState = .idle
+                } else {
+                    self.audioState = .error(error.localizedDescription)
+                    self.scheduleAudioRetry()
+                }
+                self.log.error("Audio capture failed: \(error.localizedDescription, privacy: .public)")
+            }
+            self?.broadcastAudioStatus()
+        }
+    }
+
+    private func stopAudio() {
+        guard audioWanted || audioCapture.isRunning else {
+            audioState = .idle
+            return
+        }
+        audioWanted = false
+        audioGeneration += 1
+        audioState = .idle
+        let capture = audioCapture
+        let previous = audioChain
+        audioChain = Task {
+            await previous?.value
+            await capture.stop()
+        }
+    }
+
+    private func audioInterrupted(_ error: Error?) {
+        audioWanted = false
+        audioGeneration += 1
+        let stoppedByUser = (error as NSError?).map { $0.domain == SCStreamErrorDomain && $0.code == SCStreamError.Code.userStopped.rawValue } ?? false
+        if stoppedByUser {
+            audioPauseReason = "Audio sharing was stopped from the macOS menu bar on \(DeviceIdentity.systemName)."
+            audioState = .idle
+            refreshPermission()
+            reconcileAudio()
+            return
+        }
+        audioState = .error(error?.localizedDescription ?? "Audio capture stopped.")
+        refreshPermission()
+        broadcastAudioStatus()
+        scheduleAudioRetry()
+    }
+
+    /// Tries capture again a few seconds later, a few times, rather than in a tight loop.
+    private func scheduleAudioRetry() {
+        guard audioRetries < 5 else { return }
+        audioRetries += 1
+        let generation = audioGeneration
+        let delay = UInt64(audioRetries) * 2_000_000_000
+        Task { [weak self] in
+            try? await Task.sleep(nanoseconds: delay)
+            guard let self, self.audioGeneration == generation, !self.audioWanted else { return }
+            self.reconcileAudio()
+        }
+    }
+
+    private func audioStatus(for viewer: Viewer) -> AudioStatus {
+        guard viewer.audioRequest?.enabled == true else { return AudioStatus(state: .off) }
+        if !viewer.approved {
+            return AudioStatus(state: .paused, message: "Waiting for approval on \(DeviceIdentity.systemName).")
+        }
+        if !settings.shareAudio {
+            return AudioStatus(state: .notAllowed, message: "Audio sharing is turned off on \(DeviceIdentity.systemName).")
+        }
+        if let audioPauseReason { return AudioStatus(state: .notAllowed, message: audioPauseReason) }
+        if !isSharingEnabled {
+            return AudioStatus(state: .paused, message: pauseReason ?? "Sharing is paused on the shared Mac.")
+        }
+        if isLockPaused { return AudioStatus(state: .paused, message: "The shared Mac is locked.") }
+        if !hasScreenPermission && !AudioCaptureService.usesTestAudio {
+            return AudioStatus(state: .needsPermission, message: "Screen & System Audio Recording permission is needed on the shared Mac.")
+        }
+        switch audioState {
+        case .idle, .starting:
+            return AudioStatus(state: .starting)
+        case .live:
+            return AudioStatus(state: .live, codec: audioCodecs[viewer.id], sampleRate: LiveAudio.sampleRate)
+        case .error(let message):
+            return AudioStatus(state: .error, message: message)
+        }
+    }
+
+    private func broadcastAudioStatus() {
+        for viewer in viewers {
+            let status = audioStatus(for: viewer)
+            guard lastAudioBroadcast[viewer.id] != status else { continue }
+            // Viewers that never asked don't need to hear "off".
+            if status.state == .off, lastAudioBroadcast[viewer.id] == nil { continue }
+            lastAudioBroadcast[viewer.id] = status
+            viewer.connection.send(.control(.audioStatus(status)))
         }
     }
 

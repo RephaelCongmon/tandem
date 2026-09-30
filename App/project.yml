@@ -43,7 +43,8 @@ targets:
           NSAllowsLocalNetworking: true
         NSBluetoothAlwaysUsageDescription: "Tandem uses Bluetooth to reach your other Mac when there's no shared network."
         NSCameraUsageDescription: "Tandem can share this Mac's camera with your other Mac when you choose the camera as the source."
-        NSScreenCaptureUsageDescription: "Tandem shares this Mac's screen with the other Mac you paired, only while sharing is on."
+        NSScreenCaptureUsageDescription: "Tandem shares this Mac's screen, and its sound when the other Mac listens, with the other Mac you paired, only while sharing is on."
+        NSSpeechRecognitionUsageDescription: "Tandem turns the shared Mac's audio into a live transcript on this Mac, so questions asked out loud in a meeting can be answered."
     entitlements:
       path: Tandem.entitlements
       # Not sandboxed (the user's explicit choice): the Claude Code provider runs the user's

@@ -214,6 +214,8 @@ private final class StreamPairIO: NSObject, StreamDelegate {
     private var didReportReady = false
     private var isShutDown = false
     private var isPumping = false
+    /// The peer closed its reading side; nothing more can be written.
+    private var outputEnded = false
     private var shutdownError: TransportError = .connectionLost("The connection is closed.")
     private var readBuffer: UnsafeMutablePointer<UInt8>?
 
@@ -325,7 +327,8 @@ private final class StreamPairIO: NSObject, StreamDelegate {
             return
         }
         if event.contains(.endEncountered) {
-            readAvailableBytes()
+            // Everything the peer sent before closing must arrive before the close does.
+            readAvailableBytes(drain: true)
             shutdown(.remoteClosed)
         }
     }
@@ -341,23 +344,37 @@ private final class StreamPairIO: NSObject, StreamDelegate {
             return
         }
         if event.contains(.endEncountered) {
-            shutdown(.remoteClosed)
+            // The other side stopped reading because it closed. Its last bytes can still be on
+            // the way in, ahead of the input's own end of stream, so take what's there and give
+            // the input a moment to finish (its end-of-stream shuts down right away).
+            outputEnded = true
+            readAvailableBytes()
+            StreamIOThread.shared.perform(after: Self.closeGrace) { [self] in shutdown(.remoteClosed) }
         }
     }
 
+    /// How long to wait for the input to drain after the output reports the peer closed.
+    static let closeGrace: TimeInterval = 0.5
+
     // MARK: Reading
 
-    private func readAvailableBytes() {
+    /// Reads what's buffered. Normally it yields after a few chunks so other work gets a turn;
+    /// `drain` (at end of stream, just before shutting down) reads everything, since a deferred
+    /// read would never run.
+    private func readAvailableBytes(drain: Bool = false) {
         guard !isShutDown, let buffer = readBuffer else { return }
         var chunks: [Data] = []
         var failure: String?
         var reads = 0
-        while input.hasBytesAvailable {
+        // At end of stream `hasBytesAvailable` can already read false while the last bytes are
+        // still buffered, so a drain reads until the stream itself reports the end (0) — a read
+        // there never blocks.
+        while drain || input.hasBytesAvailable {
             let count = input.read(buffer, maxLength: StreamPairTransport.readChunkBytes)
             if count > 0 {
                 chunks.append(Data(bytes: buffer, count: count))
                 reads += 1
-                if reads >= 16 {
+                if reads >= 16, !drain {
                     // Yield so writes and other transports get a turn; resume right after.
                     StreamIOThread.shared.perform { [self] in readAvailableBytes() }
                     break
@@ -378,7 +395,7 @@ private final class StreamPairIO: NSObject, StreamDelegate {
     // MARK: Writing
 
     private func pumpWrites() {
-        guard isOpen, !isShutDown, !isPumping else { return }
+        guard isOpen, !isShutDown, !isPumping, !outputEnded else { return }
         isPumping = true
         defer { isPumping = false }
 
@@ -489,6 +506,12 @@ final class StreamIOThread: @unchecked Sendable {
     }
 
     /// Runs `block` on the IO thread, after every previously performed block.
+    /// Runs `block` on the IO thread after `delay` seconds.
+    func perform(after delay: TimeInterval, _ block: @escaping () -> Void) {
+        let timer = CFRunLoopTimerCreateWithHandler(kCFAllocatorDefault, CFAbsoluteTimeGetCurrent() + delay, 0, 0, 0) { _ in block() }
+        CFRunLoopAddTimer(runLoop, timer, .defaultMode)
+    }
+
     func perform(_ block: @escaping () -> Void) {
         CFRunLoopPerformBlock(runLoop, CFRunLoopMode.defaultMode.rawValue) {
             autoreleasepool { block() }

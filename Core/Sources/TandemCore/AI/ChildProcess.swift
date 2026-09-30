@@ -63,6 +63,15 @@ final class ChildProcess: @unchecked Sendable {
         try handle.write(contentsOf: data)
     }
 
+    /// Writes `data` to stdin and leaves it open for more (a long-running conversation).
+    func writeLine(_ data: Data) throws {
+        try input.fileHandleForWriting.write(contentsOf: data)
+    }
+
+    var isRunning: Bool { process.isRunning }
+
+    var processIdentifier: Int32 { process.processIdentifier }
+
     func closeInput() {
         try? input.fileHandleForWriting.close()
     }

@@ -178,6 +178,8 @@ final class SettingsStore {
     var pauseWhenLocked: Bool = true { didSet { store(pauseWhenLocked, "source.pauseWhenLocked") } }
     var snapshotResolution: SnapshotResolution = .high { didSet { store(snapshotResolution, "source.snapshotResolution") } }
     var snapshotQuality: Double = 0.9 { didSet { store(snapshotQuality, "source.snapshotQuality") } }
+    /// Let a paired Studio hear this Mac's computer audio (for its live transcript).
+    var shareAudio: Bool = true { didSet { store(shareAudio, "source.shareAudio") } }
 
     // MARK: Studio / AI
     var provider: AIProviderKind = .claudeCode { didSet { store(provider, "ai.provider") } }
@@ -203,6 +205,17 @@ final class SettingsStore {
     var showStage: Bool = true { didSet { store(showStage, "studio.showStage") } }
     /// One-click skill buttons above the message field.
     var skills: [PromptSkill] = PromptSkill.defaults { didSet { store(skills, "studio.skills") } }
+
+    // MARK: Listening
+    /// Transcribe the shared Mac's computer audio.
+    var listen: Bool = false { didSet { store(listen, "listen.enabled") } }
+    /// Language identifier for transcription; empty means this Mac's language.
+    var transcriptLanguage: String = "" { didSet { store(transcriptLanguage, "listen.language") } }
+    /// Send the new part of the transcript with each question.
+    var includeTranscript: Bool = true { didSet { store(includeTranscript, "listen.include") } }
+    /// The most transcript sent with one question, in minutes.
+    var transcriptWindowMinutes: Int = 10 { didSet { store(transcriptWindowMinutes, "listen.windowMinutes") } }
+    var showCaptions: Bool = true { didSet { store(showCaptions, "listen.captions") } }
 
     // MARK: Automation
     var autoCaptureEnabled: Bool = false { didSet { store(autoCaptureEnabled, "auto.enabled") } }
@@ -254,6 +267,7 @@ final class SettingsStore {
         pauseWhenLocked = load("source.pauseWhenLocked", true)
         snapshotResolution = load("source.snapshotResolution", .high)
         snapshotQuality = load("source.snapshotQuality", 0.9)
+        shareAudio = load("source.shareAudio", true)
         provider = load("ai.provider", .claudeCode)
         claudeCodeModel = load("ai.claudeCodeModel", ModelCatalog.defaultModelID(for: .claudeCode) ?? "claude-opus-5-5")
         claudeCodePath = load("ai.claudeCodePath", "")
@@ -274,7 +288,12 @@ final class SettingsStore {
         autoConnect = load("studio.autoConnect", true)
         lastSourceID = load("studio.lastSourceID", nil)
         showStage = load("studio.showStage", true)
-        skills = load("studio.skills", PromptSkill.defaults)
+        skills = PromptSkill.upgradingBuiltIns(load("studio.skills", PromptSkill.defaults))
+        listen = load("listen.enabled", false)
+        transcriptLanguage = load("listen.language", "")
+        includeTranscript = load("listen.include", true)
+        transcriptWindowMinutes = load("listen.windowMinutes", 10)
+        showCaptions = load("listen.captions", true)
         autoCaptureEnabled = load("auto.enabled", false)
         autoCaptureInterval = load("auto.interval", 30)
         onlyWhenChanged = load("auto.onlyWhenChanged", true)

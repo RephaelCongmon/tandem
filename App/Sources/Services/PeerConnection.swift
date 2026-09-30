@@ -22,7 +22,8 @@ func onMain(_ body: @escaping @MainActor () -> Void) {
 }
 
 /// Main-actor view of one `PeerLink`, plus message routing:
-/// - video format/frames stay on the link queue (`videoSink`) for minimum latency,
+/// - video format/frames and audio packets stay on the link queue (`videoSink`, `audioSink`)
+///   for minimum latency,
 /// - snapshots are reassembled on the link queue and delivered whole,
 /// - everything else arrives on the main actor via `onControl`.
 @MainActor
@@ -68,8 +69,13 @@ final class PeerConnection: Identifiable {
     @ObservationIgnored nonisolated let videoSink = Locked<((PeerMessage) -> Void)?>(nil)
     /// Called on the link queue with video acks (Source side flow control).
     @ObservationIgnored nonisolated let ackSink = Locked<((VideoAck) -> Void)?>(nil)
+    /// Called on the link queue with the Source's audio packets.
+    @ObservationIgnored nonisolated let audioSink = Locked<((AudioPacket) -> Void)?>(nil)
 
     var isConnected: Bool { phase == .connected }
+
+    /// The other Mac runs a version that can send (or receive) computer audio.
+    var peerSupportsAudio: Bool { remoteHello?.capabilities.contains(PeerHello.Capability.audio) ?? false }
 
     init(link: PeerLink, direction: Direction, isPairingAttempt: Bool, expectedPeer: DeviceIdentity?) {
         id = link.id
@@ -153,6 +159,9 @@ final class LinkRouter: @unchecked Sendable {
 
         case .control(.videoAck(let ack)):
             connection.ackSink.value?(ack)
+
+        case .audioPacket(let packet):
+            connection.audioSink.value?(packet)
 
         case .snapshotChunk(let chunk):
             guard let event = assembler.receive(chunk) else { return }

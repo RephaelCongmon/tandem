@@ -310,6 +310,13 @@ private struct ViewerRow: View {
                         .font(TandemFont.caption)
                         .foregroundStyle(watching ? Theme.live : Theme.textSecondary)
                 }
+                if model.source.audioListenerIDs.contains(viewer.id) {
+                    Label("Hearing this Mac's audio", systemImage: "waveform")
+                        .font(TandemFont.caption)
+                        .foregroundStyle(Theme.accentSecondary)
+                        .lineLimit(1)
+                        .help("\(viewer.name) is transcribing what this Mac plays. Turn this off in Settings › Sharing › Audio.")
+                }
             }
             Spacer()
             Menu {

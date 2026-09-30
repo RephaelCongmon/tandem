@@ -113,7 +113,7 @@ struct SkillSettings: View {
             } header: {
                 Text("Skills")
             } footer: {
-                Text("Skills are buttons above the message field. Each one sends a fresh screenshot (when Live screen is on), anything you've typed as extra context, and the skill's instructions. In the thread you see just the skill's name. ⌘1–⌘9 send the first nine.")
+                Text("Skills are buttons above the message field. Each one sends a fresh screenshot (when Live screen is on), what was just said on the shared Mac (when Listen is on), anything you've typed as extra context, and the skill's instructions. In the thread you see just the skill's name. ⌘1–⌘9 send the first nine.")
                     .font(TandemFont.caption)
                     .foregroundStyle(Theme.textSecondary)
             }
@@ -191,6 +191,7 @@ private struct SkillEditor: View {
                     .overlay(RoundedRectangle(cornerRadius: Radius.s, style: .continuous).strokeBorder(Theme.stroke))
             }
             Toggle("Attach a fresh screenshot of the shared screen", isOn: $skill.attachesScreenshot)
+            Toggle("Include what was just said (when Listen is on)", isOn: $skill.attachesTranscript)
             HStack {
                 if !isNew {
                     Button("Delete Skill", role: .destructive) {

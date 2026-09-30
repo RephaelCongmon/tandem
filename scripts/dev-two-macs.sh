@@ -3,6 +3,8 @@
 # development: they pair automatically over loopback and the Source streams a
 # synthetic test pattern (no Screen Recording permission needed).
 #   scripts/dev-two-macs.sh [--mock-ai PORT]
+# TANDEM_TEST_AUDIO=/path/to/clip.aiff makes the Source play that clip in a loop as its
+# "computer audio", for the Studio's live transcript.
 set -euo pipefail
 ROOT="$(cd "$(dirname "$0")/.." && pwd)"
 APP="$ROOT/build/DerivedData.noindex/Build/Products/Debug/Tandem.app"
@@ -16,7 +18,9 @@ if [[ "${1:-}" == "--mock-ai" ]]; then
     sleep 1
   fi
 fi
-open -n "$APP" --env TANDEM_AUTO_APPROVE_PAIRING=1 --args -TandemProfile A -TandemRole source -TandemTestPattern YES -TandemIgnoreLock YES
+AUDIO_ARGS=()
+[[ -n "${TANDEM_TEST_AUDIO:-}" ]] && AUDIO_ARGS=(-TandemTestAudio "$TANDEM_TEST_AUDIO")
+open -n "$APP" --env TANDEM_AUTO_APPROVE_PAIRING=1 --args -TandemProfile A -TandemRole source -TandemTestPattern YES -TandemIgnoreLock YES ${AUDIO_ARGS[@]+"${AUDIO_ARGS[@]}"}
 sleep 2
 open -n "$APP" --env TANDEM_AI_BASE_URL="http://127.0.0.1:$AI_PORT/v1/" --args -TandemProfile B -TandemRole studio -TandemAutoPair YES -TandemIgnoreOcclusion YES
 echo "Source pid: $(pgrep -f 'TandemProfile A' | head -1)  Studio pid: $(pgrep -f 'TandemProfile B' | head -1)"
