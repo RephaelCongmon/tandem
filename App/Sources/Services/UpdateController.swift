@@ -32,6 +32,8 @@ final class UpdateController {
     /// A release the user put off with "Later"; its bar stays hidden until a newer one appears.
     private(set) var postponed: AppVersion?
     private(set) var hasToken = false
+    /// The toolbar's update panel is open.
+    var isPanelPresented = false
 
     let currentVersion: AppVersion
     let buildNumber: String
@@ -55,7 +57,7 @@ final class UpdateController {
 
     var isUpdating: Bool { installPhase != nil }
 
-    /// Whether the update bar should be visible.
+    /// Whether the toolbar's Update button should be visible.
     var showsBar: Bool {
         if installPhase != nil || installError != nil { return true }
         guard let latest else { return false }

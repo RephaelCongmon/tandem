@@ -65,4 +65,4 @@ These need two real Macs (and permissions only a person can grant):
    - Try an OpenAI-compatible local server (LM Studio at `http://localhost:1234/v1`).
 9. **Sleep/wake.** Sleep the Studio, wake it: it reconnects on its own.
 10. **Background Source.** Turn on **Open at login** on the Source, log out and in: no window appears, the menu bar icon does, and the Studio connects. Clicking the Dock icon or **Open Tandem** shows the window.
-11. **Updates.** With an older version installed, **Tandem › Check for Updates…** shows the update bar. **Update Now** replaces the app and relaunches the new version; from a disk image, it installs into Applications. Without GitHub access, Settings › General › Updates explains how to add it.
+11. **Updates.** With an older version installed, **Tandem › Check for Updates…** shows the toolbar's **Update** button and its panel. **Update Now** replaces the app and relaunches the new version; from a disk image, it installs into Applications. Without GitHub access, Settings › General › Updates explains how to add it.

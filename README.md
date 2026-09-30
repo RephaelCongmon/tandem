@@ -53,7 +53,7 @@ The only things that put a prompt on the shared Mac are pairing a new Mac (or pa
 
 ### Updates
 
-When a new version is published, a bar at the top of the window says **Tandem X is available**, with **What's New**, **Later** and **Update Now**. The menu bar popover and **Tandem › Check for Updates…** offer the same thing. **Update Now** downloads the release and checks that it's signed by the same developer. It then replaces the app (moving it into Applications if it was running from a disk image) and restarts Tandem, and the other Mac reconnects by itself. Tandem checks every six hours; turn that off in Settings › General › Updates.
+When a new version is published, an **Update** button appears in the window's toolbar. It opens what's new in that version, with **Later** and **Update Now**. The menu bar popover and **Tandem › Check for Updates…** offer the same thing. **Update Now** downloads the release and checks that it's signed by the same developer. It then replaces the app (moving it into Applications if it was running from a disk image) and restarts Tandem, and the other Mac reconnects by itself. Tandem checks every six hours; turn that off in Settings › General › Updates.
 
 Releases live in the private GitHub repository, so each Mac needs read access to it. It's automatic when the [GitHub CLI](https://cli.github.com) is signed in on that Mac (`brew install gh && gh auth login`). Otherwise, paste a fine-grained access token with read-only **Contents** access to the repository in Settings › General › Updates.
 

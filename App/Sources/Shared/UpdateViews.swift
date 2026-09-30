@@ -2,80 +2,94 @@ import SwiftUI
 import TandemCore
 import TandemUI
 
-/// The bar across the top of the window when an update is available or being installed.
-struct UpdateBar: View {
+/// Toolbar button shown while an update is available or installing; opens ``UpdatePanel``.
+struct UpdateToolbarButton: View {
     @Environment(AppModel.self) private var model
-    @State private var showingNotes = false
 
     var body: some View {
-        let updates = model.updates
-        HStack(spacing: 10) {
-            if let phase = updates.installPhase {
-                ProgressView().controlSize(.small)
-                Text("Updating to Tandem \(updates.latest?.version.description ?? "")… \(phase)")
-                    .font(TandemFont.callout.weight(.medium))
-                Spacer(minLength: 8)
-            } else if let error = updates.installError {
-                Image(systemName: "exclamationmark.triangle.fill").foregroundStyle(Theme.warning)
-                Text(error)
-                    .font(TandemFont.callout)
-                    .lineLimit(2)
-                    .fixedSize(horizontal: false, vertical: true)
-                Spacer(minLength: 8)
-                Button("Later") { updates.postpone() }
-                    .buttonStyle(TandemButtonStyle(.ghost, size: .small))
-                Button("Try Again") { Task { await updates.updateNow() } }
-                    .buttonStyle(TandemButtonStyle(.primary, size: .small))
-            } else if let release = updates.latest {
-                Image(systemName: "arrow.down.circle.fill")
-                    .font(.system(size: 16))
-                    .foregroundStyle(Theme.accentGradient)
-                VStack(alignment: .leading, spacing: 1) {
-                    Text("Tandem \(release.version.description) is available")
-                        .font(TandemFont.callout.weight(.semibold))
-                    Text("You have \(updates.currentVersion.description). Tandem restarts to finish; the other Mac reconnects by itself.")
-                        .font(TandemFont.caption)
-                        .foregroundStyle(Theme.textSecondary)
+        @Bindable var updates = model.updates
+        if updates.showsBar {
+            Button {
+                updates.isPanelPresented = true
+            } label: {
+                HStack(spacing: 5) {
+                    if updates.isUpdating {
+                        ProgressView().controlSize(.mini).tint(.white)
+                    } else {
+                        Image(systemName: updates.installError != nil ? "exclamationmark.triangle.fill" : "arrow.down.circle.fill")
+                    }
+                    Text(updates.isUpdating ? "Updating…" : (updates.installError != nil ? "Update Failed" : "Update"))
                 }
-                Spacer(minLength: 8)
-                if !release.notes.isEmpty {
-                    Button("What's New") { showingNotes = true }
-                        .buttonStyle(TandemButtonStyle(.ghost, size: .small))
-                        .popover(isPresented: $showingNotes, arrowEdge: .bottom) { ReleaseNotesView(release: release) }
-                }
-                Button("Later") { updates.postpone() }
-                    .buttonStyle(TandemButtonStyle(.ghost, size: .small))
-                Button("Update Now") { Task { await updates.updateNow() } }
-                    .buttonStyle(TandemButtonStyle(.primary, size: .small))
+                .font(.system(size: 12, weight: .semibold))
+                .foregroundStyle(.white)
+                .padding(.horizontal, 10)
+                .padding(.vertical, 4)
+                .background(Capsule().fill(updates.installError != nil ? AnyShapeStyle(Theme.warning) : AnyShapeStyle(Theme.accentGradient)))
+                .contentShape(Capsule())
+            }
+            .buttonStyle(.plain)
+            .help(updates.latest.map { "Tandem \($0.version.description) is available" } ?? "Updating Tandem")
+            .popover(isPresented: $updates.isPanelPresented, arrowEdge: .bottom) {
+                UpdatePanel().environment(model)
             }
         }
-        .padding(.horizontal, Spacing.l)
-        .padding(.vertical, 8)
-        .background(Theme.accent.opacity(0.08))
-        .overlay(alignment: .bottom) { Hairline() }
-        .transition(.move(edge: .top).combined(with: .opacity))
     }
 }
 
-struct ReleaseNotesView: View {
-    let release: ReleaseInfo
+/// What's new in the available release, with Later and Update Now.
+struct UpdatePanel: View {
+    @Environment(AppModel.self) private var model
 
     var body: some View {
+        let updates = model.updates
         VStack(alignment: .leading, spacing: Spacing.m) {
-            Text(release.title).font(TandemFont.headline)
-            if let date = release.publishedAt {
-                Text(date.formatted(date: .abbreviated, time: .omitted))
-                    .font(TandemFont.caption)
-                    .foregroundStyle(Theme.textSecondary)
+            HStack(spacing: 10) {
+                Image(systemName: "arrow.down.circle.fill")
+                    .font(.system(size: 28))
+                    .foregroundStyle(Theme.accentGradient)
+                VStack(alignment: .leading, spacing: 2) {
+                    Text(updates.latest.map { "Tandem \($0.version.description) is available" } ?? "Updating Tandem")
+                        .font(TandemFont.headline)
+                    Text("You have \(updates.currentVersion.description)")
+                        .font(TandemFont.caption)
+                        .foregroundStyle(Theme.textSecondary)
+                }
             }
-            ScrollView {
-                MarkdownView(release.notes)
-                    .frame(maxWidth: .infinity, alignment: .leading)
+            if let release = updates.latest, !release.notes.isEmpty {
+                ScrollView {
+                    MarkdownView(release.notes)
+                        .frame(maxWidth: .infinity, alignment: .leading)
+                }
+                .frame(maxHeight: 240)
             }
-            .frame(maxHeight: 320)
+            if let phase = updates.installPhase {
+                HStack(spacing: 8) {
+                    ProgressView().controlSize(.small)
+                    Text(phase).font(TandemFont.callout).foregroundStyle(Theme.textSecondary)
+                }
+            } else if let error = updates.installError {
+                InlineBanner(text: error)
+            }
+            Text("Tandem restarts to finish. The other Mac reconnects by itself.")
+                .font(TandemFont.caption)
+                .foregroundStyle(Theme.textTertiary)
+            HStack {
+                Spacer()
+                Button("Later") {
+                    updates.postpone()
+                    updates.isPanelPresented = false
+                }
+                .buttonStyle(TandemButtonStyle(.secondary))
+                .disabled(updates.isUpdating)
+                Button(updates.installError != nil ? "Try Again" : "Update Now") {
+                    Task { await updates.updateNow() }
+                }
+                .buttonStyle(TandemButtonStyle(.primary))
+                .disabled(updates.isUpdating || updates.latest == nil)
+            }
         }
         .padding(Spacing.l)
-        .frame(width: 380)
+        .frame(width: 400)
     }
 }
 

@@ -106,6 +106,7 @@ final class AppModel {
             await updates.check()
             if updates.latest != nil {
                 showMainWindow()
+                updates.isPanelPresented = true
             } else if updates.access == .none {
                 toasts.show("Add GitHub access in Settings › General to check for updates", systemImage: "key.fill", style: .warning)
                 openSettingsAction?()

@@ -41,6 +41,8 @@ struct StudioView: View {
             ConnectionStatusPill()
         }
         ToolbarItemGroup(placement: .primaryAction) {
+            UpdateToolbarButton()
+
             Button {
                 model.settings.showStage.toggle()
                 if !model.settings.showStage { focusStage = false }

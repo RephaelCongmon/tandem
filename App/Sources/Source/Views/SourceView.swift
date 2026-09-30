@@ -30,6 +30,7 @@ struct SourceView: View {
         .toolbar {
             ToolbarItem(placement: .navigation) { SourceStatusPill() }
             ToolbarItemGroup(placement: .primaryAction) {
+                UpdateToolbarButton()
                 SourcePicker()
                 Button {
                     model.source.toggleSharing()
