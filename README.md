@@ -166,6 +166,12 @@ Speech recognition uses [Parakeet TDT 0.6B v2](https://huggingface.co/nvidia/par
 Newest first. Each version is also published, with its download, on the repository's [Releases](https://github.com/RephaelCongmon/tandem/releases) page, and **Update Now** in the app installs it.
 
 <!-- update-log:start -->
+### 1.4.2 — September 30, 2026
+
+- **Updates without signing in:** Tandem's releases are now public, so any Mac checks for and installs updates on its own. No GitHub CLI or token needed.
+- **Captured badge:** next to the live caption, ✓ Captured shows once the speaker has paused and everything said is in the transcript. Transcribing… shows while the last words are still being recognized.
+- **Fixed:** in long stretches of speech, a few words could appear twice in the transcript.
+
 ### 1.4.1 — September 30, 2026
 
 - **Smaller download:** the app is about a third smaller. It leaves out a text-normalization library that transcription doesn't use.
