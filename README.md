@@ -105,7 +105,7 @@ scripts/build-release.sh     # signed Release build → dist/Tandem-<version>.zi
 scripts/release.sh minor     # new version: bump, test, build, tag, push, GitHub release
 ```
 
-Every release gets a higher version and build number. `scripts/release.sh [patch|minor|major] ["notes"]` bumps both in `App/project.yml`, runs all tests, builds, commits and tags `vX.Y.Z`, pushes, and publishes a GitHub release with the zip and disk image. Without notes, it uses the commit subjects since the last release. That release is what **Update Now** installs.
+Every release gets a higher version and build number. `scripts/release.sh [patch|minor|major] ["notes"]` bumps both in `App/project.yml`, runs all tests, builds, commits and tags `vX.Y.Z`, pushes, and publishes a GitHub release with the zip and disk image. It also adds the notes, dated, to the top of the [Update log](#update-log) below. Without notes, it uses the commit subjects since the last release. That release is what **Update Now** installs.
 
 For public distribution, sign with a **Developer ID Application** certificate (set `CODE_SIGN_IDENTITY` in `App/project.yml`) and notarize; the default Apple Development signing is for running on your own Macs.
 
@@ -123,3 +123,34 @@ swift scripts/debug-command.swift B dump                         # log engine st
 ```
 
 None of the debug hooks are compiled into Release builds. See [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md) and [docs/PROTOCOL.md](docs/PROTOCOL.md) for the design.
+
+## Update log
+
+Newest first. Each version is also published, with its download, on the repository's [Releases](https://github.com/RephaelCongmon/tandem/releases) page, and **Update Now** in the app installs it.
+
+<!-- update-log:start -->
+### 1.2.0 — September 29, 2026
+
+- **Skills:** one-click buttons above the message field. **Debug**, **New Problem** and **Follow-up** each send a fresh screenshot with detailed instructions for that kind of question, and anything you've typed goes along as extra context.
+- Add, edit and reorder skills in **Settings › Skills**. ⌘1–⌘9 send the first nine.
+
+### 1.1.2 — September 29, 2026
+
+- Opening Tandem always opens the copy in Applications, even on a Mac that also has a development build.
+
+### 1.1.1 — September 29, 2026
+
+- Updates now show as an **Update** button in the toolbar, with what's new, **Later** and **Update Now**, so they no longer cover the chat header.
+
+### 1.1.0 — September 29, 2026
+
+- **Update Now:** Tandem can now update itself from the toolbar, the menu bar, or Tandem › Check for Updates…
+- **Claude Code on your subscription** is the default way to ask Claude, with no API key.
+- **Reasoning level** can be changed from the chat, under the message field.
+- The sharing Mac can run unattended in the menu bar and starts quietly at login.
+
+### 1.0.0 — September 29, 2026
+
+- First version: pair two Macs with a 6-digit code, see the other Mac's screen live over Wi-Fi, a cable or Bluetooth, and ask Claude or OpenAI about it in a conversation thread.
+- Annotate, crop and redact screenshots before sending; capture on demand, with global shortcuts, or automatically on a schedule.
+<!-- update-log:end -->

@@ -6,7 +6,8 @@
 #   scripts/release.sh [patch|minor|major] ["Release notes in Markdown"]
 #   scripts/release.sh minor --notes-file notes.md
 #
-# Without notes, the commit subjects since the previous release are used.
+# Without notes, the commit subjects since the previous release are used. The notes also go,
+# dated, at the top of the README's "Update log".
 # RELEASE_COMMIT_TRAILER, if set, is appended to the release commit message.
 set -euo pipefail
 ROOT="$(cd "$(dirname "$0")/.." && pwd)"
@@ -40,7 +41,7 @@ TAG="v$NEXT"
 git rev-parse -q --verify "refs/tags/$TAG" >/dev/null && { echo "$TAG already exists."; exit 1; }
 echo "▸ Tandem $CURRENT ($BUILD) → $NEXT ($NEXT_BUILD)"
 
-restore() { git checkout -- "$PROJECT" 2>/dev/null || true; }
+restore() { git checkout -- "$PROJECT" README.md 2>/dev/null || true; }
 trap restore ERR
 sed -i '' "s/MARKETING_VERSION: \"$CURRENT\"/MARKETING_VERSION: \"$NEXT\"/; s/CURRENT_PROJECT_VERSION: \"$BUILD\"/CURRENT_PROJECT_VERSION: \"$NEXT_BUILD\"/" "$PROJECT"
 
@@ -57,9 +58,22 @@ if [[ -z "$NOTES" ]]; then
   [[ -n "$NOTES" ]] || NOTES="- Maintenance update"
 fi
 
+# Newest first in the README's update log, dated like "September 29, 2026".
+python3 - "$NEXT" "$(date +"%B %-d, %Y")" "$NOTES" <<'PY'
+import re, sys
+version, date, notes = sys.argv[1], sys.argv[2], sys.argv[3]
+body = "\n".join(line for line in notes.strip().splitlines() if not re.match(r"\s*#{1,6}\s", line)).strip()
+marker = "<!-- update-log:start -->"
+text = open("README.md").read()
+if marker not in text:
+    sys.exit("README.md has no update log (missing " + marker + ")")
+entry = f"{marker}\n### {version} — {date}\n\n{body}\n"
+open("README.md", "w").write(text.replace(marker + "\n", entry + "\n", 1))
+PY
+
 MESSAGE="Release $NEXT"
 [[ -n "${RELEASE_COMMIT_TRAILER:-}" ]] && MESSAGE="$MESSAGE"$'\n\n'"$RELEASE_COMMIT_TRAILER"
-git commit -q -m "$MESSAGE" -- "$PROJECT"
+git commit -q -m "$MESSAGE" -- "$PROJECT" README.md
 trap - ERR
 git tag -a "$TAG" -m "Tandem $NEXT"
 git push -q origin HEAD
