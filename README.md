@@ -166,6 +166,10 @@ Speech recognition uses [Parakeet TDT 0.6B v2](https://huggingface.co/nvidia/par
 Newest first. Each version is also published, with its download, on the repository's [Releases](https://github.com/RephaelCongmon/tandem/releases) page, and **Update Now** in the app installs it.
 
 <!-- update-log:start -->
+### 1.4.1 — September 30, 2026
+
+- **Smaller download:** the app is about a third smaller. It leaves out a text-normalization library that transcription doesn't use.
+
 ### 1.4.0 — September 29, 2026
 
 - **More accurate transcripts:** Listen now uses NVIDIA's Parakeet model on the Neural Engine. On real conversation it made about a quarter fewer mistakes than Apple's recognizer (14.4% vs 19.7% word errors), and it gets names and jargon right more often. The model (451 MB) downloads once, in the background, to the asking Mac only.
