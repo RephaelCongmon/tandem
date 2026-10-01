@@ -176,6 +176,12 @@ Speech recognition uses [Parakeet TDT 0.6B v2](https://huggingface.co/nvidia/par
 Newest first. Each version is also published, with its download, on the repository's [Releases](https://github.com/RephaelCongmon/tandem/releases) page, and **Update Now** in the app installs it.
 
 <!-- update-log:start -->
+### 1.6.2 — September 30, 2026
+
+- **One-step Select region.** Click **Select region** (⇧⌘S) once and it becomes a tool. Drag over the live view, and when you let go that part of the shared screen is in the composer at full resolution, a fraction of a second later. Keep dragging to add more; **Whole Screen** adds the entire frame; **Done** (esc) turns the tool off.
+- The frame holds still while you drag, so you get exactly what you selected. If the shared screen changed in that moment, its own picture replaces the frozen frame before you let go.
+- Pictures are instant when both Macs run 1.6.2. A shared Mac still on 1.6.1 works too, a little slower, so update it as well.
+
 ### 1.6.1 — September 30, 2026
 
 - **Deliberate pictures.** Sending a question, **Ask** or a skill no longer takes a screenshot. Only the pictures you pick go to the AI.
