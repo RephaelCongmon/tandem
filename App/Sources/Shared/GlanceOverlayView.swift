@@ -27,7 +27,7 @@ struct GlanceOverlayView: View {
     static let cornerRadius: CGFloat = 14
     /// Glance's 14 pt text. Clicks pass through the overlay, so there are no Copy buttons, and
     /// code and tables that don't fit wrap rather than scroll sideways.
-    static let markdownStyle = MarkdownStyle(bodyFont: .system(size: 14), textColor: .white, showsCopyButtons: false, wrapsWideContent: true)
+    static let markdownStyle = MarkdownStyle(bodyFont: .system(size: 14), textColor: .white, isPassive: true)
     /// Space above and below the text inside the scrolling area.
     static let textInsets = EdgeInsets(top: 2, leading: 16, bottom: 14, trailing: 16)
 
@@ -98,7 +98,7 @@ struct GlanceOverlayView: View {
                 Image(systemName: "bolt.horizontal.circle")
                     .font(.system(size: 10.5))
                     .foregroundStyle(Color.white.opacity(0.45))
-                    .help("The studio isn't connected")
+                    .accessibilityLabel("The studio isn't connected")
             }
         }
         .padding(.horizontal, 16)

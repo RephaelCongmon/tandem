@@ -14,11 +14,10 @@ public struct MarkdownStyle: Hashable, Sendable {
     public var compact: Bool
     /// Font for code blocks and inline code spans in body text.
     public var codeFont: Font
-    /// Code blocks get a Copy button (off where nothing can be clicked, like the Glance overlay).
-    public var showsCopyButtons: Bool
-    /// Wrap code and stack tables that don't fit, instead of scrolling sideways (for views
-    /// nobody can scroll, like the click-through Glance overlay).
-    public var wrapsWideContent: Bool
+    /// For views nobody can click or scroll, like the click-through Glance overlay: no Copy
+    /// buttons, text selection, tooltips or animated indicators, and code and tables that don't
+    /// fit wrap instead of scrolling sideways.
+    public var isPassive: Bool
 
     /// Creates a style. `codeFont` defaults to the design system's mono font for the density.
     public init(
@@ -26,15 +25,13 @@ public struct MarkdownStyle: Hashable, Sendable {
         textColor: Color = Theme.textPrimary,
         compact: Bool = false,
         codeFont: Font? = nil,
-        showsCopyButtons: Bool = true,
-        wrapsWideContent: Bool = false
+        isPassive: Bool = false
     ) {
         self.bodyFont = bodyFont
         self.textColor = textColor
         self.compact = compact
         self.codeFont = codeFont ?? (compact ? TandemFont.monoSmall : TandemFont.mono)
-        self.showsCopyButtons = showsCopyButtons
-        self.wrapsWideContent = wrapsWideContent
+        self.isPassive = isPassive
     }
 
     /// Chat-thread density: 13.5 pt body.
@@ -157,7 +154,20 @@ public struct MarkdownView: View {
             listDepth: 0,
             spacing: style.metrics.blockSpacing
         )
-        .textSelection(.enabled)
+        .modifier(SelectableText(isEnabled: !style.isPassive))
+    }
+}
+
+/// Text selection, unless nothing can be clicked.
+private struct SelectableText: ViewModifier {
+    let isEnabled: Bool
+
+    func body(content: Content) -> some View {
+        if isEnabled {
+            content.textSelection(.enabled)
+        } else {
+            content
+        }
     }
 }
 
@@ -273,7 +283,7 @@ struct CodeBlockView: View {
                 .font(style.codeFont)
                 .foregroundStyle(Theme.textPrimary)
                 .lineSpacing(metrics.codeLineSpacing)
-            if style.wrapsWideContent {
+            if style.isPassive {
                 text
                     .fixedSize(horizontal: false, vertical: true)
                     .padding(.horizontal, metrics.codeHorizontalPadding)
@@ -302,12 +312,12 @@ struct CodeBlockView: View {
                 .textCase(.uppercase)
                 .foregroundStyle(Theme.textTertiary)
                 .lineLimit(1)
-            if !isClosed {
+            if !isClosed, !style.isPassive {
                 StreamingIndicator()
                     .transition(.opacity)
             }
             Spacer(minLength: Spacing.s)
-            if style.showsCopyButtons {
+            if !style.isPassive {
                 IconButton(
                     copied ? "checkmark" : "doc.on.doc",
                     help: copied ? "Copied" : "Copy code",
@@ -431,7 +441,7 @@ struct MarkdownTableView: View {
     let style: MarkdownStyle
 
     var body: some View {
-        if style.wrapsWideContent {
+        if style.isPassive {
             // A table that doesn't fit becomes one card per row, so every column stays readable.
             ViewThatFits(in: .horizontal) {
                 grid

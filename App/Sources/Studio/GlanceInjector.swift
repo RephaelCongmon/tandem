@@ -54,6 +54,8 @@ final class GlanceInjector {
     @ObservationIgnored private(set) var roundTripSamples: [Double] = []
 
     var hasContent: Bool { !content.text.isEmpty || content.isStreaming }
+    /// There's a Glance now, or there isn't anymore (its shortcuts are only taken while there is).
+    @ObservationIgnored var onHasContentChanged: ((Bool) -> Void)?
     var isShowingOnSource: Bool { remote?.state == .showing }
 
     @ObservationIgnored weak var chat: ChatController?
@@ -269,7 +271,9 @@ final class GlanceInjector {
     }
 
     private func update(text: String, title: String?, origin: GlanceContent.Origin, isStreaming: Bool) {
+        let had = hasContent
         content = GlanceOverlayContent(text: text, title: title, origin: origin, isStreaming: isStreaming)
+        if hasContent != had { onHasContentChanged?(hasContent) }
         if let message = outbox.update(text: text, title: title, origin: origin, isStreaming: isStreaming) {
             send(message)
         }

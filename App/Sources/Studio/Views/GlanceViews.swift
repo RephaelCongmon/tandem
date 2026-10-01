@@ -227,7 +227,7 @@ struct GlanceStageOutline: View {
 /// The Glance controls at the bottom of the live view while the tool is on.
 struct GlanceControlBar: View {
     @Environment(AppModel.self) private var model
-    @FocusState private var fieldFocused: Bool
+    @State private var editorHeight = GlanceDraftEditor.minHeight
 
     var body: some View {
         @Bindable var glance = model.studio.glance
@@ -240,15 +240,12 @@ struct GlanceControlBar: View {
                     .padding(.horizontal, 4)
             }
             HStack(alignment: .bottom, spacing: 6) {
-                TextField("Type or paste text to show on \(name)…", text: $glance.draft, axis: .vertical)
-                    .textFieldStyle(.plain)
-                    .font(TandemFont.body)
-                    .lineLimit(1...5)
-                    .focused($fieldFocused)
-                    .padding(.horizontal, 10)
-                    .padding(.vertical, 7)
+                GlanceDraftEditor(text: $glance.draft, height: $editorHeight, placeholder: "Type or paste text to show on \(name)…")
+                    .frame(height: editorHeight)
+                    .padding(.horizontal, 4)
                     .background(RoundedRectangle(cornerRadius: Radius.m, style: .continuous).fill(Theme.surfaceSunken.opacity(0.7)))
                     .overlay(RoundedRectangle(cornerRadius: Radius.m, style: .continuous).strokeBorder(Theme.stroke))
+                    .help("Pasting from Notion, Google Docs, a web page, Word or Pages keeps the formatting. ⌥⇧⌘V pastes plain text.")
                 ViewThatFits(in: .horizontal) {
                     HStack(spacing: 6) {
                         showButton(titled: true)
@@ -275,7 +272,6 @@ struct GlanceControlBar: View {
         .padding(8)
         .frame(maxWidth: 760)
         .tandemGlass(cornerRadius: Radius.l, interactive: true)
-        .onAppear { fieldFocused = true }
     }
 
     private enum Density { case full, compact, minimal }

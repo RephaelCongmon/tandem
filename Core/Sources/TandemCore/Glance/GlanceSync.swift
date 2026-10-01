@@ -136,4 +136,9 @@ public struct GlanceDocument: Sendable, Equatable {
     public mutating func clear() {
         self = GlanceDocument()
     }
+
+    /// No more text is coming (the Studio that was writing it disconnected).
+    public mutating func endStreaming() {
+        isStreaming = false
+    }
 }

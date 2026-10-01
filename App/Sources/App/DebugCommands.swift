@@ -186,6 +186,14 @@ enum DebugCommands {
                     try? await Task.sleep(nanoseconds: 40_000_000)
                 }
             }
+        case "glancePasteHTML":
+            // glancePasteHTML <file>: what pasting that HTML into the Glance field shows.
+            if let html = try? String(contentsOfFile: argument, encoding: .utf8) {
+                let markdown = RichTextMarkdown.markdown(html: html) ?? html
+                Logger(subsystem: "com.rofel.tandem", category: "Debug").notice("TANDEM-PASTE \(markdown.replacingOccurrences(of: "\n", with: " ⏎ "), privacy: .public)")
+                model.studio.glance.draft = markdown
+                model.studio.glance.showDraft()
+            }
         case "glanceAnswer":
             model.studio.glance.showLatestAnswer()
         case "glanceFollow":
@@ -239,6 +247,10 @@ enum DebugCommands {
         case "glanceHide":
             // On the Source: what ⌃⌥G does there.
             model.source.glance.toggleHiddenHere()
+        case "glanceAudit":
+            // On the Source: `glanceAudit start`, drive the Glance from the Studio, then
+            // `glanceAudit report` — proves it never took focus, activation or clicks.
+            GlanceFocusAudit.shared.run(argument, model: model)
         case "glanceAllow":
             // On the Source: Settings › Sharing › Let the other Mac show text on this screen.
             model.settings.allowGlance = argument != "off"
@@ -283,6 +295,91 @@ enum DebugCommands {
         URLSession.shared.dataTask(with: request).resume()
     }
 
+    /// Watches for anything the Glance overlay could take from the app in use on the Source.
+    @MainActor
+    final class GlanceFocusAudit {
+        static let shared = GlanceFocusAudit()
+        private var observers: [NSObjectProtocol] = []
+        private var tandemActivations = 0
+        private var keyOrMain: [String] = []
+        private var frontmostChanges: [String] = []
+        private var frontBefore: String?
+        private var started = Date()
+        private let log = Logger(subsystem: "com.rofel.tandem", category: "Debug")
+
+        func run(_ argument: String, model: AppModel) {
+            if argument == "report" { report(model) } else { start() }
+        }
+
+        private func start() {
+            for observer in observers { NotificationCenter.default.removeObserver(observer); NSWorkspace.shared.notificationCenter.removeObserver(observer) }
+            observers.removeAll()
+            tandemActivations = 0
+            keyOrMain = []
+            frontmostChanges = []
+            started = Date()
+            frontBefore = NSWorkspace.shared.frontmostApplication?.localizedName
+            let center = NotificationCenter.default
+            observers.append(center.addObserver(forName: NSApplication.didBecomeActiveNotification, object: nil, queue: .main) { [weak self] _ in
+                MainActor.assumeIsolated { self?.tandemActivations += 1 }
+            })
+            for name in [NSWindow.didBecomeKeyNotification, NSWindow.didBecomeMainNotification] {
+                observers.append(center.addObserver(forName: name, object: nil, queue: .main) { [weak self] note in
+                    MainActor.assumeIsolated {
+                        let window = note.object as? NSWindow
+                        self?.keyOrMain.append("\(name.rawValue.replacingOccurrences(of: "NSWindowDidBecome", with: "")):\(window?.title ?? "?")")
+                    }
+                })
+            }
+            observers.append(NSWorkspace.shared.notificationCenter.addObserver(forName: NSWorkspace.didActivateApplicationNotification, object: nil, queue: .main) { [weak self] note in
+                MainActor.assumeIsolated {
+                    let app = note.userInfo?[NSWorkspace.applicationUserInfoKey] as? NSRunningApplication
+                    self?.frontmostChanges.append(app?.localizedName ?? "?")
+                }
+            })
+            log.notice("TANDEM-AUDIT start front=\(self.frontBefore ?? "-", privacy: .public) tandemActive=\(NSApp.isActive, privacy: .public)")
+        }
+
+        private func report(_ model: AppModel) {
+            let panel = model.source.glance.debugPanel
+            let front = NSWorkspace.shared.frontmostApplication?.localizedName ?? "-"
+            var clicksGoTo: [String] = []
+            var drawnOnTop: [String] = []
+            if let panel, panel.isVisible {
+                let frame = panel.frame
+                for fy in [0.2, 0.5, 0.8] {
+                    for fx in [0.15, 0.5, 0.85] {
+                        let point = NSPoint(x: frame.minX + frame.width * fx, y: frame.minY + frame.height * fy)
+                        let hit = NSWindow.windowNumber(at: point, belowWindowWithWindowNumber: 0)
+                        clicksGoTo.append(hit == panel.windowNumber ? "OVERLAY" : Self.owner(of: hit))
+                        drawnOnTop.append(Self.overlayIsAbove(hit, overlay: panel.windowNumber))
+                    }
+                }
+            }
+            let seconds = Int(Date().timeIntervalSince(started))
+            log.notice("TANDEM-AUDIT report seconds=\(seconds, privacy: .public) frontBefore=\(self.frontBefore ?? "-", privacy: .public) frontNow=\(front, privacy: .public) appsActivated=\(self.frontmostChanges, privacy: .public) tandemBecameActive=\(self.tandemActivations, privacy: .public) tandemActiveNow=\(NSApp.isActive, privacy: .public) keyOrMainWindows=\(self.keyOrMain, privacy: .public)")
+            log.notice("TANDEM-AUDIT overlay visible=\(panel?.isVisible ?? false, privacy: .public) key=\(panel?.isKeyWindow ?? false, privacy: .public) main=\(panel?.isMainWindow ?? false, privacy: .public) ignoresMouse=\(panel?.ignoresMouseEvents ?? false, privacy: .public) level=\(panel?.level.rawValue ?? -1, privacy: .public) frame=\(String(describing: panel?.frame), privacy: .public)")
+            log.notice("TANDEM-AUDIT clicksGoTo=\(clicksGoTo, privacy: .public) overlayDrawnAboveThatWindow=\(drawnOnTop, privacy: .public)")
+        }
+
+        private static func owner(of windowNumber: Int) -> String {
+            guard windowNumber > 0,
+                  let info = (CGWindowListCopyWindowInfo([.optionIncludingWindow], CGWindowID(windowNumber)) as? [[String: Any]])?.first
+            else { return "none(\(windowNumber))" }
+            return info[kCGWindowOwnerName as String] as? String ?? "?"
+        }
+
+        /// Whether the overlay is drawn above the window a click at that spot reaches.
+        private static func overlayIsAbove(_ windowNumber: Int, overlay: Int) -> String {
+            guard let windows = CGWindowListCopyWindowInfo([.optionOnScreenOnly], kCGNullWindowID) as? [[String: Any]] else { return "?" }
+            // Front to back.
+            let order = windows.compactMap { $0[kCGWindowNumber as String] as? Int }
+            guard let overlayIndex = order.firstIndex(of: overlay) else { return "overlay-not-on-screen" }
+            guard let clickedIndex = order.firstIndex(of: windowNumber) else { return "desktop" }
+            return overlayIndex < clickedIndex ? "above" : "BELOW"
+        }
+    }
+
     /// Writes a state snapshot to the container's tmp directory.
     private static func dump(model: AppModel) {
         let studio = model.studio
@@ -302,6 +399,7 @@ enum DebugCommands {
         lines.append("studio.regionTool=\(studio.isRegionToolOn) drag=\(studio.regionDrag.map { "\($0.id):\(Int($0.frameSize.width))x\(Int($0.frameSize.height)):preview=\($0.preview != nil)" } ?? "-") cropsInFlight=\(studio.regionCropsInFlight) capturing=\(studio.isCapturing)")
         lines.append("auto=\(model.settings.autoCaptureEnabled) last=\(studio.lastAutoResult ?? "-")")
         lines.append("studio.glance=\(studio.glance.debugDescription)")
+        lines.append("hotkeys=\(HotkeyAction.allCases.filter { HotKeyCenter.shared.isRegistered($0.id) }.map(\.rawValue)) failed=\(model.hotkeys.errors.map { "\($0.key.rawValue): \($0.value)" })")
         lines.append("source.glance=window=\(source.glance.windowNumber) onScreen=\(source.glance.isOnScreen) hiddenHere=\(source.glance.isHiddenHere) from=\(source.glance.senderName ?? "-") rev=\(source.glance.document.revision) chars=\(source.glance.document.text.count) streaming=\(source.glance.document.isStreaming) layout=\(source.glance.layout) status=\(source.glance.status(for: nil))")
         lines.append("network.blocked=\(model.connections.localNetworkBlocked) failure=\(model.connections.lastFailure?.message ?? "-")")
         // Logged (not written to the container) so tools can read it without

@@ -16,7 +16,7 @@ final class HotkeyController {
         let center = HotKeyCenter.shared
         center.unregisterAll()
         var problems: [HotkeyAction: String] = [:]
-        for action in HotkeyAction.actions(for: role.hotkeyRole) {
+        for action in HotkeyAction.actions(for: role.hotkeyRole) where isAvailable(action, role: role) {
             guard let combo = model.settings.combo(for: action) else { continue }
             do {
                 try center.register(combo, for: action.id) { [weak self] in self?.perform(action) }
@@ -25,6 +25,20 @@ final class HotkeyController {
             }
         }
         errors = problems
+    }
+
+    /// Glance's shortcuts are only taken while there's a Glance, so the rest of the time they
+    /// never shadow a shortcut of the app in use. `AppModel` re-registers when that changes.
+    private func isAvailable(_ action: HotkeyAction, role: AppRole) -> Bool {
+        guard let model else { return false }
+        switch action {
+        case .toggleGlance:
+            return role == .source ? model.settings.allowGlance && model.source.glance.hasGlance : model.studio.glance.hasContent
+        case .glanceScrollUp, .glanceScrollDown:
+            return role == .studio && model.studio.glance.hasContent
+        default:
+            return true
+        }
     }
 
     func unregisterAll() {
@@ -93,12 +107,9 @@ final class HotkeyController {
             model.showMainWindow()
         case .toggleGlance:
             if model.settings.role == .source {
-                let glance = model.source.glance
-                guard glance.hasGlance else {
-                    model.toasts.show("No Glance from the Studio", systemImage: "sparkles")
-                    return
-                }
-                glance.toggleHiddenHere()
+                // Only registered while there's a Glance; nothing else to do or show here.
+                guard model.source.glance.hasGlance else { return }
+                model.source.glance.toggleHiddenHere()
             } else {
                 let glance = model.studio.glance
                 guard glance.hasContent else {

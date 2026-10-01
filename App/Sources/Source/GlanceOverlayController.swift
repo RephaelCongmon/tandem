@@ -5,6 +5,24 @@ import SwiftUI
 import TandemCore
 import TandemUI
 
+/// A Studio talking to the overlay: its connection here, or a stand-in in tests.
+@MainActor
+protocol GlanceClient: AnyObject {
+    var id: UUID { get }
+    var glanceSenderName: String? { get }
+    var isGlanceReachable: Bool { get }
+    /// The client's clock minus this Mac's, when known.
+    var glanceClockOffsetNanos: Int64? { get }
+    func sendGlanceStatus(_ status: GlanceStatus)
+}
+
+extension PeerConnection: GlanceClient {
+    var glanceSenderName: String? { peer?.name }
+    var isGlanceReachable: Bool { isConnected }
+    var glanceClockOffsetNanos: Int64? { stats.clockOffsetNanos }
+    func sendGlanceStatus(_ status: GlanceStatus) { send(.control(.glanceStatus(status))) }
+}
+
 /// The Source's Glance: text from the Studio in a see-through overlay on this Mac's screen.
 ///
 /// It's Glance's passive panel: borderless, never key, clicks pass through, on every Space
@@ -22,13 +40,16 @@ final class GlanceOverlayController {
     /// The Studio whose Glance this is.
     private(set) var senderName: String?
 
-    /// There's something to show (an empty answer that's still being written counts).
-    var hasGlance: Bool { document.id != nil && (!document.isEmpty || document.isStreaming) }
+    /// There's something to show (an empty answer that's still being written counts). Stored,
+    /// so views and menus that read it don't redraw on every streamed word.
+    private(set) var hasGlance = false
 
     /// Where the overlay goes: the shared display, else the screen with the shared window.
     @ObservationIgnored var placement: @MainActor () -> (screen: NSScreen, isSharedDisplay: Bool)? = {
-        NSScreen.main.map { ($0, false) }
+        (NSScreen.screens.first ?? NSScreen.main).map { ($0, false) }
     }
+    /// A Glance appeared or went away (its ⌃⌥G shortcut is only taken while there is one).
+    @ObservationIgnored var onHasGlanceChanged: ((Bool) -> Void)?
     /// The panel exists; its window must be kept out of every capture.
     @ObservationIgnored var onWindowCreated: ((CGWindowID) -> Void)?
 
@@ -36,7 +57,7 @@ final class GlanceOverlayController {
     @ObservationIgnored private let model = GlanceOverlayModel()
     @ObservationIgnored private var panel: NSPanel?
     /// Studios that sent Glance messages on their current connection; they get status reports.
-    @ObservationIgnored private var clients: [UUID: PeerConnection] = [:]
+    @ObservationIgnored private var clients: [UUID: any GlanceClient] = [:]
     /// Newest layout applied per connection (each Studio counts on its own).
     @ObservationIgnored private var sequences: [UUID: UInt64] = [:]
     @ObservationIgnored private var ownerID: UUID?
@@ -45,12 +66,16 @@ final class GlanceOverlayController {
     @ObservationIgnored private var needsFullText: Set<UUID> = []
     @ObservationIgnored private var statusScheduled = false
     @ObservationIgnored private var appliedFrame = GlanceFrame.standard
+    /// When an animated move (a snap to a corner, say) is still running.
+    @ObservationIgnored private var frameAnimationEnds = 0.0
     @ObservationIgnored private var screenObserver: NSObjectProtocol?
     @ObservationIgnored private let log = Logger(subsystem: "com.rofel.tandem", category: "Glance")
 
     #if DEBUG
     /// The panel's window number (0 before it exists), for `dump`.
     var windowNumber: Int { panel?.windowNumber ?? 0 }
+    /// The panel itself, for the focus checks.
+    var debugPanel: NSPanel? { panel }
     #endif
 
     /// Smallest overlay, in points.
@@ -66,13 +91,14 @@ final class GlanceOverlayController {
 
     // MARK: From the Studio
 
-    func receive(_ content: GlanceContent, from connection: PeerConnection) {
+    func receive(_ content: GlanceContent, from connection: any GlanceClient) {
         register(connection)
         guard settings.allowGlance, !yields(to: connection, isResync: content.isResync) else { return scheduleStatus() }
         switch document.apply(content) {
         case .applied:
             needsFullText.remove(connection.id)
             adopt(connection)
+            updateHasGlance()
             refresh(animated: false)
         case .stale:
             break
@@ -83,7 +109,7 @@ final class GlanceOverlayController {
         scheduleStatus()
     }
 
-    func receive(_ layout: GlanceLayout, from connection: PeerConnection) {
+    func receive(_ layout: GlanceLayout, from connection: any GlanceClient) {
         register(connection)
         guard layout.sequence > sequences[connection.id] ?? 0 else { return }
         sequences[connection.id] = layout.sequence
@@ -93,7 +119,7 @@ final class GlanceOverlayController {
         refresh(animated: layout.animated)
         if let sent = layout.sentAtNanos {
             // The Studio's clock, corrected by the link's measured offset (peer − local).
-            let offset = connection.stats.clockOffsetNanos ?? 0
+            let offset = connection.glanceClockOffsetNanos ?? 0
             let oneWay = Double(Int64(bitPattern: wallClockNanos()) - (Int64(bitPattern: sent) - offset)) / 1_000_000
             log.info("TANDEM-TIMING glance layout #\(layout.sequence) on screen \(oneWay, format: .fixed(precision: 1)) ms after the Studio sent it")
         }
@@ -106,12 +132,16 @@ final class GlanceOverlayController {
         clients[id] = nil
         sequences[id] = nil
         needsFullText.remove(id)
-        if ownerID == id { refresh(animated: false) }
+        guard ownerID == id else { return }
+        // Whatever it was writing won't be finished; don't say "Writing…" forever.
+        if document.isStreaming { document.endStreaming() }
+        updateHasGlance()
+        refresh(animated: false)
     }
 
     /// A Studio's session was approved here: anything it sent before was dropped, so tell it
     /// what's shown (it then resends its Glance).
-    func viewerApproved(_ connection: PeerConnection) {
+    func viewerApproved(_ connection: any GlanceClient) {
         register(connection)
         scheduleStatus()
     }
@@ -141,6 +171,7 @@ final class GlanceOverlayController {
         if !settings.allowGlance {
             document.clear()
             senderName = nil
+            updateHasGlance()
         }
         refresh(animated: false)
         scheduleStatus()
@@ -155,6 +186,7 @@ final class GlanceOverlayController {
     /// Leaving the Source role.
     func teardown() {
         document.clear()
+        updateHasGlance()
         layout = GlanceLayout(isVisible: false)
         clients.removeAll()
         sequences.removeAll()
@@ -166,7 +198,14 @@ final class GlanceOverlayController {
 
     // MARK: Showing
 
-    private func register(_ connection: PeerConnection) {
+    private func updateHasGlance() {
+        let has = document.id != nil && (!document.isEmpty || document.isStreaming)
+        guard has != hasGlance else { return }
+        hasGlance = has
+        onHasGlanceChanged?(has)
+    }
+
+    private func register(_ connection: any GlanceClient) {
         guard clients[connection.id] == nil else { return }
         clients[connection.id] = connection
         scheduleStatus()
@@ -174,21 +213,21 @@ final class GlanceOverlayController {
 
     /// A Studio that's only catching up (just connected) doesn't replace a Glance another
     /// connected Studio is showing; the person there has to show something first.
-    private func yields(to connection: PeerConnection, isResync: Bool?) -> Bool {
+    private func yields(to connection: any GlanceClient, isResync: Bool?) -> Bool {
         guard isResync == true, let owner = ownerID, owner != connection.id, clients[owner] != nil else { return false }
         return hasGlance
     }
 
-    private func adopt(_ connection: PeerConnection) {
+    private func adopt(_ connection: any GlanceClient) {
         ownerID = connection.id
-        if let name = connection.peer?.name { senderName = name }
+        if let name = connection.glanceSenderName, name != senderName { senderName = name }
     }
 
     private func refresh(animated: Bool) {
         let wanted = settings.allowGlance && !isHiddenHere && layout.isVisible && hasGlance
         guard wanted, let target = target() else {
             panel?.orderOut(nil)
-            isOnScreen = false
+            if isOnScreen { isOnScreen = false }
             return
         }
         let panel = self.panel ?? makePanel()
@@ -233,12 +272,21 @@ final class GlanceOverlayController {
                     context.timingFunction = CAMediaTimingFunction(name: .easeOut)
                     panel.animator().setFrame(rect, display: true)
                 }
+                frameAnimationEnds = monotonicSeconds() + 0.25
+            } else if monotonicSeconds() < frameAnimationEnds {
+                // A drag right after a snap: replace the running animation, or it would win.
+                NSAnimationContext.runAnimationGroup { context in
+                    context.duration = 0
+                    panel.animator().setFrame(rect, display: true)
+                }
+                frameAnimationEnds = 0
             } else {
                 panel.setFrame(rect, display: true)
             }
         }
+        // Shown without activating Tandem or taking the key window from the app in use.
         if !panel.isVisible { panel.orderFrontRegardless() }
-        isOnScreen = true
+        if !isOnScreen { isOnScreen = true }
     }
 
     private func makePanel() -> NSPanel {
@@ -257,7 +305,8 @@ final class GlanceOverlayController {
         panel.hidesOnDeactivate = false
         panel.isReleasedWhenClosed = false
         panel.animationBehavior = .none
-        panel.collectionBehavior = [.canJoinAllSpaces, .fullScreenAuxiliary, .stationary, .ignoresCycle]
+        // Every Space and over full-screen apps; out of Mission Control, Show Desktop and ⌘`.
+        panel.collectionBehavior = [.canJoinAllSpaces, .fullScreenAuxiliary, .transient, .ignoresCycle]
         // A hint for other apps' captures (not a guarantee); Tandem's own capture leaves the
         // window out entirely (`CaptureService.alwaysExcludedWindowIDs`).
         panel.sharingType = .none
@@ -292,8 +341,8 @@ final class GlanceOverlayController {
     }
 
     private func sendStatus() {
-        for connection in clients.values where connection.isConnected {
-            connection.send(.control(.glanceStatus(status(for: connection.id))))
+        for client in clients.values where client.isGlanceReachable {
+            client.sendGlanceStatus(status(for: client.id))
         }
     }
 
@@ -359,7 +408,9 @@ final class GlanceOverlayController {
     /// The shared display; the screen with most of the shared window; or the main screen.
     static func screen(for capture: CaptureSourceDescriptor?) -> (screen: NSScreen, isSharedDisplay: Bool)? {
         let screens = NSScreen.screens
-        guard let main = NSScreen.main ?? screens.first else { return nil }
+        // The primary display (with the menu bar), not `NSScreen.main`, which follows keyboard
+        // focus and would make the overlay jump displays as the person here works.
+        guard let main = screens.first ?? NSScreen.main else { return nil }
         guard let capture else { return (main, false) }
         switch capture.source.kind {
         case .display:

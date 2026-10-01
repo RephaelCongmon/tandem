@@ -98,6 +98,9 @@ final class AppModel {
         connections.onNeedsDecision = { [weak self] in self?.presentForDecision() }
         source.onNeedsDecision = { [weak self] in self?.presentForDecision() }
         hotkeys.model = self
+        // Glance's shortcuts exist only while there's a Glance (see HotkeyController).
+        source.glance.onHasGlanceChanged = { [weak self] _ in self?.hotkeys.registerAll() }
+        studio.glance.onHasContentChanged = { [weak self] _ in self?.hotkeys.registerAll() }
         studio.sharedMacUpdater.toasts = toasts
         studio.sharedMacUpdater.onSourceRestarting = { [weak self] in
             // The shared Mac relaunches in a couple of seconds; don't wait out the backoff.
