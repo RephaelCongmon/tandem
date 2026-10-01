@@ -17,16 +17,19 @@ struct StageView: View {
                 .opacity(model.studio.liveState == .live ? 1 : 0)
                 .animation(.easeOut(duration: 0.25), value: model.studio.liveState == .live)
             overlayContent
+            if model.studio.isRegionToolOn {
+                RegionToolOverlay()
+            }
         }
         .overlay(alignment: .topLeading) {
-            if model.studio.isConnected {
+            if showsChrome {
                 StageHUD()
                     .padding(Spacing.m)
                     .opacity(chromeVisible || model.studio.liveState != .live ? 1 : 0)
             }
         }
         .overlay(alignment: .topTrailing) {
-            if model.studio.isConnected {
+            if showsChrome {
                 HStack(spacing: 6) {
                     RemoteSourceMenu()
                     IconButton(focus ? "arrow.down.right.and.arrow.up.left" : "arrow.up.left.and.arrow.down.right",
@@ -40,14 +43,14 @@ struct StageView: View {
             }
         }
         .overlay(alignment: .bottom) {
-            if model.studio.isConnected {
+            if showsChrome {
                 StageToolbar()
                     .padding(.bottom, Spacing.l)
                     .opacity(chromeVisible || model.studio.liveState != .live ? 1 : 0)
             }
         }
         .overlay(alignment: .center) {
-            if let progress = model.studio.connection?.snapshotProgress, progress.totalBytes > 0 {
+            if !model.studio.isRegionToolOn, let progress = model.studio.connection?.snapshotProgress, progress.totalBytes > 0 {
                 SnapshotProgressBadge(progress: progress)
             }
         }
@@ -63,11 +66,17 @@ struct StageView: View {
             }
         }
         .onTapGesture(count: 2) {
+            guard !model.studio.isRegionToolOn else { return }
             withAnimation(.spring(response: 0.35)) { focus.toggle() }
         }
         .clipped()
         .onAppear { model.studio.stageAppeared() }
         .onDisappear { model.studio.stageDisappeared() }
+    }
+
+    /// HUD and toolbars; hidden while the region tool is on so the whole frame can be dragged over.
+    private var showsChrome: Bool {
+        model.studio.isConnected && !model.studio.isRegionToolOn
     }
 
     private func scheduleHide() {
@@ -185,13 +194,13 @@ private struct StageToolbar: View {
             .disabled(!model.chat.canSendFromComposer)
             .help("Ask using your text and selected pictures (⇧⌘↩)")
 
-            Button { studio.captureToComposer() } label: {
+            Button { studio.toggleRegionTool() } label: {
                 Label("Select region", systemImage: "rectangle.dashed")
                     .font(.system(size: 12.5, weight: .semibold))
             }
             .buttonStyle(TandemButtonStyle(.secondary, size: .regular))
-            .disabled(!studio.canCapture || studio.isCapturing)
-            .help("Freeze a frame and drag to select a picture (⇧⌘S)")
+            .disabled(!studio.canCapture)
+            .help("Drag on the live view to add pictures of the shared screen (⇧⌘S)")
 
             Hairline(vertical: true).frame(height: 18).padding(.horizontal, 4)
 

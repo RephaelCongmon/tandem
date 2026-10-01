@@ -1,12 +1,24 @@
 import CoreGraphics
 import Foundation
 
+/// The frame the Studio holds on screen while the user drags out a region.
+public enum FrozenFrame {
+    /// Live frames arrive only when pixels change, so if the Source captured nothing after
+    /// the displayed frame, its still shows the same screen and needs no preview.
+    public static func isCurrent(displayed: UInt64?, latestCaptured: UInt64?) -> Bool {
+        guard let displayed, let latestCaptured else { return false }
+        return latestCaptured <= displayed
+    }
+}
+
 /// A rectangle in top-left image coordinates, normalized to 0…1.
 public struct SnapshotRegion: Codable, Sendable, Hashable {
     public var x: Double
     public var y: Double
     public var width: Double
     public var height: Double
+
+    public static let full = SnapshotRegion(x: 0, y: 0, width: 1, height: 1)
 
     public init(x: Double, y: Double, width: Double, height: Double) {
         self.x = x

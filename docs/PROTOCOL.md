@@ -85,19 +85,31 @@ Unknown messages are ignored, so newer peers can add them. `hello.capabilities` 
 
 ### Frozen region snapshots
 
-The `regionSnapshots` capability enables deliberate region capture. The Studio first sends
-`snapshotRequest {prepareRegionSelection: true, maxDimension: 1600, ...}`. The Source captures
-a native frame and keeps one frame per viewer in memory for up to five minutes. Its response
-is a small selection preview, with the request ID as its token. This preview is never an AI attachment.
+The `regionSnapshots` capability enables deliberate region capture. Each region comes from a
+**freeze**: `snapshotRequest {prepareRegionSelection: true, maxDimension: 1600 (960 on
+Bluetooth), ...}`. The Source captures a native still and keeps it in memory for up to five
+minutes, keyed by the request ID. Its response is a small preview, which is never an AI attachment.
 
-After the user draws a rectangle, the Studio sends another `snapshotRequest` with
-`frozenSnapshotID` and `region {x, y, width, height}` in normalized top-left image coordinates.
-The Source crops the retained frame before scaling and JPEG encoding, and transfers only
-that region at full quality. The response keeps the original capture time. Invalid geometry,
-missing or expired tokens, source changes, and paused or locked sharing fail explicitly;
-they never fall back to a full-screen or newer capture. Cancellation sends
-`discardRegionSelection`, and a successful crop or disconnect also frees the frame.
-Older peers are asked to update before region selection is attempted.
+A **crop** is another `snapshotRequest` with `frozenSnapshotID` and `region {x, y, width, height}`
+in normalized top-left image coordinates. The Source crops the held still before scaling and
+JPEG encoding, sends only that region at full quality, keeping the still's capture time, and
+then frees the still. Invalid geometry, missing or expired tokens, source changes, and paused
+or locked sharing fail explicitly; they never fall back to a full-screen or newer capture.
+`discardRegionSelection {id}` frees a still that won't be cropped, and a disconnect frees them all.
+
+Sources from 1.6.2 also advertise `regionTool`, which the Studio's region tool relies on to
+send a region the moment the user lets go:
+
+- The freeze carries `displayedFrameNanos`, the capture time of the live frame the Studio froze
+  on screen when the drag began. If the Source captured no newer live frame (frames only arrive
+  when pixels change), the still shows the same screen and the reply is `snapshotUnchanged`
+  instead of a preview. Otherwise the preview replaces the frozen frame while the user drags.
+- A crop can arrive before its still has been captured; the Source waits for the capture.
+- The Source holds up to two stills per Studio, so the next drag can start while the previous
+  crop is still being made. A crop already under way always finishes.
+
+With an older Source (no `regionTool`), the Studio waits for each freeze's preview before
+sending its crop. With no `regionSnapshots`, it asks the user to update the shared Mac.
 
 ### Scheduling
 

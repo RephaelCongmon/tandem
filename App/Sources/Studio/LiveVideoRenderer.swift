@@ -35,6 +35,13 @@ final class LiveVideoRenderer: @unchecked Sendable {
     private var lastKeyframeRequest = 0.0
     private var hasShownFrame = false
     private var dimensions = (0, 0)
+    // Guarded by factoryLock, with everything else that feeds the display layer.
+    /// Source capture time of the newest frame handed to the display layer.
+    private var lastEnqueuedCapturedAt: UInt64?
+    /// Holding the picture for region selection: frames are acked but not shown.
+    private var isFrozen = false
+    /// Frames were skipped while frozen: show frames again from the next keyframe.
+    private var resumesAtKeyframe = false
     private let log = Logger(subsystem: "com.rofel.tandem", category: "LiveVideo")
 
     init() {
@@ -54,6 +61,7 @@ final class LiveVideoRenderer: @unchecked Sendable {
             do {
                 if try factory.update(format: format) {
                     renderer.flush()
+                    lastEnqueuedCapturedAt = nil
                     lock.lock()
                     dimensions = (format.width, format.height)
                     lock.unlock()
@@ -72,6 +80,19 @@ final class LiveVideoRenderer: @unchecked Sendable {
                 requestKeyframe(link: link)
                 return
             }
+            if isFrozen {
+                recordFrame(frame, link: link)
+                return
+            }
+            if resumesAtKeyframe {
+                guard frame.isKeyframe else {
+                    requestKeyframe(link: link)
+                    return
+                }
+                renderer.flush()
+                resumesAtKeyframe = false
+                log.info("Live view resumed after region selection")
+            }
             if renderer.status == .failed {
                 log.info("Renderer failed; flushing and requesting a keyframe")
                 renderer.flush()
@@ -81,6 +102,7 @@ final class LiveVideoRenderer: @unchecked Sendable {
             do {
                 let sample = try factory.makeSampleBuffer(for: frame)
                 renderer.enqueue(sample)
+                lastEnqueuedCapturedAt = frame.capturedAtNanos
             } catch {
                 requestKeyframe(link: link)
                 return
@@ -135,11 +157,39 @@ final class LiveVideoRenderer: @unchecked Sendable {
         if let stats, let onStats { onMain { onStats(stats) } }
     }
 
+    /// Holds the picture on screen for region selection: frames keep arriving and are
+    /// acked, but aren't shown. Returns the Source capture time of the held frame and the
+    /// stream size, or nil when nothing is displayed.
+    func freeze() -> (capturedAtNanos: UInt64, width: Int, height: Int)? {
+        factoryLock.lock()
+        defer { factoryLock.unlock() }
+        guard let captured = lastEnqueuedCapturedAt else { return nil }
+        isFrozen = true
+        lock.lock()
+        let size = dimensions
+        lock.unlock()
+        return (captured, size.0, size.1)
+    }
+
+    /// Back to live from the next keyframe. Returns whether it was frozen, so the caller
+    /// asks the Source for that keyframe.
+    func unfreeze() -> Bool {
+        factoryLock.lock()
+        defer { factoryLock.unlock() }
+        let wasFrozen = isFrozen
+        isFrozen = false
+        if wasFrozen { resumesAtKeyframe = true }
+        return wasFrozen
+    }
+
     /// Clears the picture (new connection or stream stopped).
     func reset() {
         displayLayer.sampleBufferRenderer.flush(removingDisplayedImage: true, completionHandler: nil)
         factoryLock.lock()
         factory.reset()
+        lastEnqueuedCapturedAt = nil
+        isFrozen = false
+        resumesAtKeyframe = false
         factoryLock.unlock()
         lock.lock()
         hasShownFrame = false

@@ -45,8 +45,27 @@ enum DebugCommands {
             model.chat.sendFromComposer()
         case "captureAndAsk":
             model.studio.captureAndAsk()
-        case "captureToComposer":
-            model.studio.captureToComposer()
+        case "captureToComposer", "regionTool":
+            // regionTool [on|off]; no argument toggles.
+            if argument.isEmpty { model.studio.toggleRegionTool() } else { model.studio.setRegionTool(argument != "off") }
+        case "regionDown":
+            // Press on the live view with the tool (hold the frame); regionUp releases.
+            model.studio.beginRegionDrag()
+        case "regionUp":
+            let values = argument.split(separator: " ").compactMap { Double($0) }
+            model.studio.endRegionDrag(values.count == 4 ? SnapshotRegion(x: values[0], y: values[1], width: values[2], height: values[3]) : nil)
+        case "regionBurst":
+            // regionBurst N: N quick drags in a row over different parts of the frame.
+            for index in 0..<max(1, Int(argument) ?? 4) where model.studio.beginRegionDrag() {
+                let x = Double(index % 4) * 0.25
+                model.studio.endRegionDrag(SnapshotRegion(x: x, y: 0.1, width: 0.2, height: 0.3))
+            }
+        case "regionDrag":
+            // regionDrag x y width height (normalized) or empty for the whole frame: one drag with the tool.
+            let values = argument.split(separator: " ").compactMap { Double($0) }
+            if model.studio.beginRegionDrag() {
+                model.studio.endRegionDrag(values.count == 4 ? SnapshotRegion(x: values[0], y: values[1], width: values[2], height: values[3]) : .full)
+            }
         case "connectNamedSource":
             if let peer = model.connections.nearby.first(where: { $0.name == argument }) {
                 model.connections.connect(to: peer.id)
@@ -209,7 +228,7 @@ enum DebugCommands {
         lines.append("source.audio=\(source.audioState) listeners=\(source.audioListenerIDs.count) requests=\(source.viewers.map { String(describing: $0.audioRequest) })")
         lines.append("chat.threads=\(model.chat.threads.count) streaming=\(model.chat.streaming != nil) banner=\(model.chat.banner ?? "-")")
         lines.append("chat.pictures=\(model.chat.composerAttachments.map { "\($0.id):\($0.attachment.pixelWidth)x\($0.attachment.pixelHeight):\($0.attachment.capturedAt.timeIntervalSince1970)" }) use=\(model.chat.useSelectedPictures)")
-        lines.append("studio.selection=\(studio.regionSelection.map { "\($0.preview.header.id):\($0.preview.header.capturedAt.timeIntervalSince1970)" } ?? "-") capturing=\(studio.isCapturing)")
+        lines.append("studio.regionTool=\(studio.isRegionToolOn) drag=\(studio.regionDrag.map { "\($0.id):\(Int($0.frameSize.width))x\(Int($0.frameSize.height)):preview=\($0.preview != nil)" } ?? "-") cropsInFlight=\(studio.regionCropsInFlight) capturing=\(studio.isCapturing)")
         lines.append("auto=\(model.settings.autoCaptureEnabled) last=\(studio.lastAutoResult ?? "-")")
         lines.append("network.blocked=\(model.connections.localNetworkBlocked) failure=\(model.connections.lastFailure?.message ?? "-")")
         // Logged (not written to the container) so tools can read it without

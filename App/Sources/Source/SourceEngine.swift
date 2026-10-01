@@ -91,17 +91,24 @@ final class SourceEngine {
     @ObservationIgnored private var lastAudioBroadcast: [UUID: AudioStatus] = [:]
     @ObservationIgnored private let settings: SettingsStore
     @ObservationIgnored private var lastFingerprints: [UUID: ImageCodec.Fingerprint] = [:]
+    /// A native still a Studio crops a region from, kept only in memory. It's captured in the
+    /// background, so a crop that arrives before the capture finishes waits for it.
     private struct FrozenSnapshot {
         let id: UUID
+        let viewerID: UUID
         let source: CaptureSourceID
-        let image: CGImage
-        let capturedAt: Date
         let title: String?
+        let still: Task<(image: CGImage, capturedAt: Date), Error>
+        let order: Int
+        var expiry: Task<Void, Never>?
     }
-    /// At most one native selection frame per viewer, kept only in memory.
+    /// Keyed by the freeze request's id. At most two per viewer: the region tool can start a
+    /// drag while the previous drag's crop is still being made.
     @ObservationIgnored private var frozenSnapshots: [UUID: FrozenSnapshot] = [:]
-    @ObservationIgnored private var frozenExpiryTasks: [UUID: Task<Void, Never>] = [:]
+    @ObservationIgnored private var frozenOrder = 0
     @ObservationIgnored private var snapshotEpoch = 0
+    /// Capture time of the newest live frame (frames only arrive when pixels change).
+    @ObservationIgnored private let latestFrameNanos = Locked<UInt64?>(nil)
     @ObservationIgnored private var captureChain: Task<Void, Never>?
     @ObservationIgnored private var captureGeneration = 0
     @ObservationIgnored private var runningConfig: CaptureConfig?
@@ -118,7 +125,9 @@ final class SourceEngine {
         let fanout = self.fanout
         let preview = self.preview
         let layer = previewLayer
+        let latestFrameNanos = self.latestFrameNanos
         capture.onFrame = { [weak self] sample, pixel, captured in
+            latestFrameNanos.value = captured
             fanout.submit(pixel, presentationTime: CMSampleBufferGetPresentationTimeStamp(sample), capturedAtNanos: captured)
             if preview.value { self?.enqueuePreview(sample, layer: layer) }
         }
@@ -262,7 +271,7 @@ final class SourceEngine {
         case .snapshotRequest(let request):
             handleSnapshotRequest(request, viewer: viewers[index])
         case .discardRegionSelection(let id):
-            if frozenSnapshots[connection.id]?.id == id { clearFrozenSnapshot(for: connection.id) }
+            if frozenSnapshots[id]?.viewerID == connection.id { releaseFrozenSnapshot(id: id) }
         case .sourceCatalogRequest:
             guard viewers[index].approved else { return }
             Task {
@@ -429,6 +438,7 @@ final class SourceEngine {
             await previous?.value
             do {
                 if restart || !capture.isRunning {
+                    self?.latestFrameNanos.value = nil
                     fanout.resetStream()
                     let descriptor = try await capture.start(source: source, config: config, excludeOwnApp: exclude)
                     if self?.captureGeneration == generation { self?.current = descriptor }
@@ -465,9 +475,11 @@ final class SourceEngine {
         let capture = self.capture
         let fanout = self.fanout
         let previous = captureChain
+        let latestFrameNanos = self.latestFrameNanos
         captureChain = Task {
             await previous?.value
             await capture.stop()
+            latestFrameNanos.value = nil
             fanout.resetStream()
         }
         if captureState != .needsPermission { captureState = .idle }
@@ -695,12 +707,29 @@ final class SourceEngine {
 
     private func invalidateFrozenSnapshots() {
         snapshotEpoch += 1
-        for id in Array(frozenSnapshots.keys) { clearFrozenSnapshot(for: id) }
+        for id in Array(frozenSnapshots.keys) { releaseFrozenSnapshot(id: id) }
     }
 
     private func clearFrozenSnapshot(for viewerID: UUID) {
-        frozenSnapshots[viewerID] = nil
-        frozenExpiryTasks.removeValue(forKey: viewerID)?.cancel()
+        for (id, frozen) in frozenSnapshots where frozen.viewerID == viewerID { releaseFrozenSnapshot(id: id) }
+    }
+
+    private func releaseFrozenSnapshot(id: UUID) {
+        frozenSnapshots.removeValue(forKey: id)?.expiry?.cancel()
+    }
+
+    /// Keeps a still for five minutes, dropping the viewer's oldest beyond two.
+    private func hold(_ frozen: FrozenSnapshot) {
+        let older = frozenSnapshots.values.filter { $0.viewerID == frozen.viewerID }.sorted { $0.order < $1.order }
+        for stale in older.dropLast(1) { releaseFrozenSnapshot(id: stale.id) }
+        var frozen = frozen
+        let id = frozen.id
+        frozen.expiry = Task { [weak self] in
+            try? await Task.sleep(nanoseconds: 300_000_000_000)
+            guard !Task.isCancelled else { return }
+            self?.releaseFrozenSnapshot(id: id)
+        }
+        frozenSnapshots[id] = frozen
     }
 
     private func handleSnapshotRequest(_ request: SnapshotRequest, viewer: Viewer) {
@@ -717,6 +746,10 @@ final class SourceEngine {
             connection.send(.control(.snapshotFailed(id: request.id, reason: "Nothing is selected to share.")))
             return
         }
+        if request.prepareRegionSelection == true || request.region != nil || request.frozenSnapshotID != nil {
+            handleRegionRequest(request, viewer: viewer, source: source)
+            return
+        }
         let capture = self.capture
         let showCursor = settings.showCursor
         let exclude = settings.excludeTandemWindows
@@ -727,34 +760,12 @@ final class SourceEngine {
         let epoch = snapshotEpoch
         Task { [weak self] in
             do {
-                guard let self else { return }
-                let image: CGImage
-                let capturedAt: Date
-                var captureTitle = title
-                let preparesSelection = request.prepareRegionSelection == true
-                guard !(preparesSelection && (request.region != nil || request.frozenSnapshotID != nil)),
-                      (request.region == nil) == (request.frozenSnapshotID == nil) else {
-                    throw CaptureError.snapshotFailed("Invalid region request. Retake the picture.")
-                }
-                if let region = request.region, let token = request.frozenSnapshotID {
-                    guard let frozen = self.frozenSnapshots[viewer.id], frozen.id == token,
-                          frozen.source == source,
-                          let cropped = region.cropped(from: frozen.image) else {
-                        throw CaptureError.snapshotFailed("The selection expired or changed. Retake the picture.")
-                    }
-                    image = cropped
-                    capturedAt = frozen.capturedAt
-                    captureTitle = frozen.title.map { "\($0) · Region" }
-                } else {
-                    image = try await capture.snapshot(source: source, maxDimension: preparesSelection ? 0 : maxDimension, showsCursor: showCursor, excludeOwnApp: exclude)
-                    capturedAt = Date()
-                }
+                let image = try await capture.snapshot(source: source, maxDimension: maxDimension, showsCursor: showCursor, excludeOwnApp: exclude)
                 let encoded = await Task.detached(priority: .userInitiated) { () -> (Data, Int, Int, ImageCodec.Fingerprint?)? in
-                    let limit = preparesSelection ? min(max(maxDimension, 1), 1600) : maxDimension
-                    guard let jpeg = ImageCodec.jpeg(image, quality: quality, maxDimension: limit) else { return nil }
-                    return (jpeg.data, jpeg.width, jpeg.height, preparesSelection || request.region != nil ? nil : ImageCodec.fingerprint(image))
+                    guard let jpeg = ImageCodec.jpeg(image, quality: quality) else { return nil }
+                    return (jpeg.data, jpeg.width, jpeg.height, ImageCodec.fingerprint(image))
                 }.value
-                guard let (data, width, height, fingerprint) = encoded else {
+                guard let self, let (data, width, height, fingerprint) = encoded else {
                     connection.send(.control(.snapshotFailed(id: request.id, reason: "Couldn't encode the snapshot.")))
                     return
                 }
@@ -769,28 +780,110 @@ final class SourceEngine {
                     return
                 }
                 if let fingerprint { self.lastFingerprints[viewer.id] = fingerprint }
-                if preparesSelection {
-                    self.clearFrozenSnapshot(for: viewer.id)
-                    self.frozenSnapshots[viewer.id] = FrozenSnapshot(id: request.id, source: source, image: image, capturedAt: capturedAt, title: title)
-                    self.frozenExpiryTasks[viewer.id] = Task { [weak self] in
-                        try? await Task.sleep(nanoseconds: 300_000_000_000)
-                        guard !Task.isCancelled else { return }
-                        self?.clearFrozenSnapshot(for: viewer.id)
-                    }
-                } else if let token = request.frozenSnapshotID, self.frozenSnapshots[viewer.id]?.id == token {
-                    self.clearFrozenSnapshot(for: viewer.id)
-                }
                 let header = SnapshotHeader(
                     id: request.id, trigger: request.trigger, note: nil,
                     pixelWidth: width, pixelHeight: height, byteCount: data.count,
                     chunkCount: PeerLink.chunkCount(byteCount: data.count, link: connection.linkKind),
-                    mimeType: "image/jpeg", capturedAt: capturedAt, captureTitle: captureTitle
+                    mimeType: "image/jpeg", capturedAt: Date(), captureTitle: title
                 )
                 connection.sendSnapshot(header: header, data: data)
             } catch {
                 connection.send(.control(.snapshotFailed(id: request.id, reason: error.localizedDescription)))
                 if case CaptureError.permissionDenied = error { self?.refreshPermission() }
             }
+        }
+    }
+
+    /// Freeze (`prepareRegionSelection`): capture a native still and hold it for crops. With
+    /// `displayedFrameNanos`, when no newer live frame was captured the still matches the
+    /// frame the Studio froze and it gets `snapshotUnchanged`; otherwise it gets a preview.
+    /// Crop: send one region of a held still, never of a newer screen, then free the still.
+    private func handleRegionRequest(_ request: SnapshotRequest, viewer: Viewer, source: CaptureSourceID) {
+        let connection = viewer.connection
+        let viewerID = viewer.id
+        let epoch = snapshotEpoch
+        let quality = min(max(request.quality, 0.5), 1)
+        let maxDimension = request.maxDimension
+        func fail(_ reason: String) {
+            connection.send(.control(.snapshotFailed(id: request.id, reason: reason)))
+        }
+
+        if request.prepareRegionSelection == true, request.region == nil, request.frozenSnapshotID == nil {
+            let capture = self.capture
+            let showCursor = settings.showCursor
+            let exclude = settings.excludeTandemWindows
+            let title = current?.title
+            let still = Task { () async throws -> (image: CGImage, capturedAt: Date) in
+                (try await capture.snapshot(source: source, maxDimension: 0, showsCursor: showCursor, excludeOwnApp: exclude), Date())
+            }
+            frozenOrder += 1
+            hold(FrozenSnapshot(id: request.id, viewerID: viewerID, source: source, title: title, still: still, order: frozenOrder))
+            // A change made just before the still reaches the live stream within a frame interval.
+            let settle = min(1 / Double(max(runningConfig?.fps ?? 30, 1)) + 0.03, 0.25)
+            Task { [weak self] in
+                do {
+                    let (image, capturedAt) = try await still.value
+                    if let displayed = request.displayedFrameNanos {
+                        try? await Task.sleep(nanoseconds: UInt64(settle * 1_000_000_000))
+                        guard let self else { return }
+                        // Already cropped (a quick drag), or the frozen frame is current: no preview needed.
+                        if self.frozenSnapshots[request.id] == nil
+                            || FrozenFrame.isCurrent(displayed: displayed, latestCaptured: self.latestFrameNanos.value) {
+                            guard self.isActive, self.snapshotEpoch == epoch else { return fail("Sharing is paused on the shared Mac.") }
+                            connection.send(.control(.snapshotUnchanged(id: request.id)))
+                            return
+                        }
+                    }
+                    let limit = min(max(maxDimension, 1), 1600)
+                    let preview = await Task.detached(priority: .userInitiated) { ImageCodec.jpeg(image, quality: quality, maxDimension: limit) }.value
+                    guard let preview else { return fail("Couldn't encode the snapshot.") }
+                    guard let self, self.isActive, self.snapshotEpoch == epoch, self.selectedSource == source,
+                          self.frozenSnapshots[request.id] != nil,
+                          self.viewers.contains(where: { $0.id == viewerID && $0.approved }) else {
+                        return fail("Sharing is paused on the shared Mac.")
+                    }
+                    connection.sendSnapshot(header: SnapshotHeader(
+                        id: request.id, trigger: request.trigger, note: nil,
+                        pixelWidth: preview.width, pixelHeight: preview.height, byteCount: preview.data.count,
+                        chunkCount: PeerLink.chunkCount(byteCount: preview.data.count, link: connection.linkKind),
+                        mimeType: "image/jpeg", capturedAt: capturedAt, captureTitle: title
+                    ), data: preview.data)
+                } catch {
+                    self?.releaseFrozenSnapshot(id: request.id)
+                    fail(error.localizedDescription)
+                    if case CaptureError.permissionDenied = error { self?.refreshPermission() }
+                }
+            }
+        } else if let region = request.region, let token = request.frozenSnapshotID, request.prepareRegionSelection != true {
+            guard let frozen = frozenSnapshots[token], frozen.viewerID == viewerID, frozen.source == source else {
+                return fail("The selection expired or changed. Retake the picture.")
+            }
+            Task { [weak self] in
+                do {
+                    let (image, capturedAt) = try await frozen.still.value
+                    guard let cropped = region.cropped(from: image) else { return fail("That selection isn't inside the picture.") }
+                    let encoded = await Task.detached(priority: .userInitiated) { ImageCodec.jpeg(cropped, quality: quality, maxDimension: maxDimension) }.value
+                    guard let encoded else { return fail("Couldn't encode the snapshot.") }
+                    // Paused, locked or pointed elsewhere meanwhile: send nothing. (A still that was only
+                    // evicted by newer drags is still this crop's to finish.)
+                    guard let self, self.isActive, self.snapshotEpoch == epoch, self.selectedSource == source,
+                          self.viewers.contains(where: { $0.id == viewerID && $0.approved }) else {
+                        return fail("The selection expired or changed. Retake the picture.")
+                    }
+                    // One region per freeze.
+                    self.releaseFrozenSnapshot(id: token)
+                    connection.sendSnapshot(header: SnapshotHeader(
+                        id: request.id, trigger: request.trigger, note: nil,
+                        pixelWidth: encoded.width, pixelHeight: encoded.height, byteCount: encoded.data.count,
+                        chunkCount: PeerLink.chunkCount(byteCount: encoded.data.count, link: connection.linkKind),
+                        mimeType: "image/jpeg", capturedAt: capturedAt, captureTitle: frozen.title.map { "\($0) · Region" }
+                    ), data: encoded.data)
+                } catch {
+                    fail(error.localizedDescription)
+                }
+            }
+        } else {
+            fail("Invalid region request. Retake the picture.")
         }
     }
 

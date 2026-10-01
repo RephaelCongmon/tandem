@@ -77,6 +77,10 @@ public struct PeerHello: Codable, Sendable, Hashable {
         public static let peerUpdate = "update"
         /// Source: retains a frozen frame and returns only the selected region.
         public static let regionSnapshots = "regionSnapshots"
+        /// Source: also serves the region tool. It holds a still per drag, answers a crop
+        /// as soon as its still is captured, and skips the preview when the Studio's
+        /// frozen frame is current (`SnapshotRequest.displayedFrameNanos`).
+        public static let regionTool = "regionTool"
     }
 
     public var role: PeerRole
@@ -177,8 +181,12 @@ public struct SnapshotRequest: Codable, Sendable, Hashable {
     /// Crop this region from the retained frame, never from a newer screen.
     public var region: SnapshotRegion?
     public var frozenSnapshotID: UUID?
+    /// With `prepareRegionSelection`: capture time (Source clock) of the live frame the
+    /// Studio froze on screen. When nothing newer was captured, the still shows the same
+    /// screen and a `regionTool` Source replies `snapshotUnchanged` instead of a preview.
+    public var displayedFrameNanos: UInt64?
 
-    public init(id: UUID = UUID(), trigger: SnapshotTrigger, maxDimension: Int, quality: Double, skipIfUnchangedBelow: Double? = nil, prepareRegionSelection: Bool? = nil, region: SnapshotRegion? = nil, frozenSnapshotID: UUID? = nil) {
+    public init(id: UUID = UUID(), trigger: SnapshotTrigger, maxDimension: Int, quality: Double, skipIfUnchangedBelow: Double? = nil, prepareRegionSelection: Bool? = nil, region: SnapshotRegion? = nil, frozenSnapshotID: UUID? = nil, displayedFrameNanos: UInt64? = nil) {
         self.id = id
         self.trigger = trigger
         self.maxDimension = maxDimension
@@ -187,6 +195,7 @@ public struct SnapshotRequest: Codable, Sendable, Hashable {
         self.prepareRegionSelection = prepareRegionSelection
         self.region = region
         self.frozenSnapshotID = frozenSnapshotID
+        self.displayedFrameNanos = displayedFrameNanos
     }
 }
 

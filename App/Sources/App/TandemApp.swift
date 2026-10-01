@@ -105,9 +105,9 @@ struct TandemCommands: Commands {
                 Button("Ask with Selected Pictures") { model.studio.captureAndAsk() }
                     .keyboardShortcut(.return, modifiers: [.command, .shift])
                     .disabled(!model.chat.canSendFromComposer)
-                Button("Select Region…") { model.studio.captureToComposer() }
+                Button(model.studio.isRegionToolOn ? "Stop Selecting Regions" : "Select Region") { model.studio.toggleRegionTool() }
                     .keyboardShortcut("s", modifiers: [.command, .shift])
-                    .disabled(!model.studio.canCapture || model.studio.isCapturing)
+                    .disabled(!model.studio.isRegionToolOn && !model.studio.canCapture)
                 Divider()
                 Button(model.settings.autoCaptureEnabled ? "Turn Off Auto-Capture" : "Turn On Auto-Capture") {
                     model.studio.toggleAutoCapture()

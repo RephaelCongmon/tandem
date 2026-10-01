@@ -22,7 +22,6 @@ struct ComposerView: View {
 
     var body: some View {
         @Bindable var chat = model.chat
-        @Bindable var studio = model.studio
         VStack(alignment: .leading, spacing: 8) {
             if !chat.composerAttachments.isEmpty || model.studio.isConnected {
                 attachmentsRow
@@ -65,10 +64,6 @@ struct ComposerView: View {
         .onDrop(of: [.image, .fileURL], isTargeted: $dropTargeted, perform: handleDrop)
         .sheet(item: $editing) { attachment in
             MarkupEditorSheet(attachment: attachment)
-                .environment(model)
-        }
-        .sheet(item: $studio.regionSelection, onDismiss: { model.studio.cancelRegionSelection() }) { selection in
-            RegionCaptureSheet(selection: selection)
                 .environment(model)
         }
         .onAppear { focused = true }
@@ -123,19 +118,21 @@ struct ComposerView: View {
                     }
                 }
                 if model.studio.isConnected {
+                    let on = model.studio.isRegionToolOn
                     Button {
-                        model.studio.captureToComposer()
+                        model.studio.toggleRegionTool()
                     } label: {
-                        Label("Select region", systemImage: model.studio.isCapturing ? "hourglass" : "rectangle.dashed")
+                        Label("Select region", systemImage: model.studio.regionCropsInFlight > 0 ? "hourglass" : "rectangle.dashed")
                             .font(.system(size: 14, weight: .semibold))
-                            .foregroundStyle(Theme.textSecondary)
+                            .foregroundStyle(on ? Theme.accent : Theme.textSecondary)
                             .padding(.horizontal, 10)
                             .frame(height: 40)
-                            .background(RoundedRectangle(cornerRadius: Radius.s, style: .continuous).strokeBorder(Theme.strokeStrong, style: StrokeStyle(lineWidth: 1, dash: [4, 3])))
+                            .background(RoundedRectangle(cornerRadius: Radius.s, style: .continuous).fill(on ? Theme.accent.opacity(0.12) : .clear))
+                            .background(RoundedRectangle(cornerRadius: Radius.s, style: .continuous).strokeBorder(on ? Theme.accent : Theme.strokeStrong, style: StrokeStyle(lineWidth: 1, dash: on ? [] : [4, 3])))
                     }
                     .buttonStyle(.plain)
-                    .disabled(!model.studio.canCapture || model.studio.isCapturing)
-                    .help("Freeze a frame, then drag to select a picture (⇧⌘S)")
+                    .disabled(!on && !model.studio.canCapture)
+                    .help(on ? "Drag on the live view to add pictures. Click again or press esc to stop (⇧⌘S)" : "Drag on the live view to add pictures of the shared screen (⇧⌘S)")
                 }
             }
             .padding(.vertical, 2)

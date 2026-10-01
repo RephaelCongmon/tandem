@@ -83,6 +83,8 @@ final class PeerConnection: Identifiable {
     /// The other Mac runs a version that can send (or receive) computer audio.
     var peerSupportsAudio: Bool { remoteHello?.capabilities.contains(PeerHello.Capability.audio) ?? false }
     var peerSupportsRegionSnapshots: Bool { remoteHello?.capabilities.contains(PeerHello.Capability.regionSnapshots) ?? false }
+    /// The other Mac serves the region tool (crops while its still is captured, no preview when current).
+    var peerSupportsRegionTool: Bool { remoteHello?.capabilities.contains(PeerHello.Capability.regionTool) ?? false }
 
     /// The other Mac installs updates this Mac sends it.
     var peerAcceptsUpdates: Bool { remoteHello?.capabilities.contains(PeerHello.Capability.peerUpdate) ?? false }

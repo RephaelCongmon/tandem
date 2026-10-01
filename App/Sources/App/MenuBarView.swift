@@ -178,7 +178,7 @@ private struct StudioMenuSection: View {
                 .buttonStyle(TandemButtonStyle(.primary, size: .small))
                 .disabled(!model.chat.canSendFromComposer)
                 Button {
-                    studio.captureToComposer()
+                    studio.setRegionTool(true)
                     model.showMainWindow()
                 } label: {
                     Label("Select region", systemImage: "rectangle.dashed").frame(maxWidth: .infinity)

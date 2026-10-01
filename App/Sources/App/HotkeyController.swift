@@ -65,8 +65,8 @@ final class HotkeyController {
                 model.toasts.show("Add a question or select a picture first", systemImage: "exclamationmark.triangle.fill", style: .warning)
             }
         case .captureToComposer:
-            model.studio.captureToComposer()
-            model.showMainWindow()
+            model.studio.toggleRegionTool()
+            if model.studio.isRegionToolOn { model.showMainWindow() }
         case .toggleAutoCapture:
             model.studio.toggleAutoCapture()
             model.toasts.show(
