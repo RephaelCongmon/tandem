@@ -192,6 +192,11 @@ Speech recognition uses [Parakeet TDT 0.6B v2](https://huggingface.co/nvidia/par
 Newest first. Each version is also published, with its download, on the repository's [Releases](https://github.com/RephaelCongmon/tandem/releases) page, and **Update Now** in the app installs it.
 
 <!-- update-log:start -->
+### 1.8.0 — October 1, 2026
+
+- **Paste formatted documents into Glance**: copying from Notion, Google Docs, a web page, Word, Pages or Notes keeps the headings, bold and italic, lists and to-dos, links, code, quotes and tables on the shared Mac's screen, instead of plain text. ⌥⇧⌘V pastes plain text. The Glance field now takes several lines.
+- **Glance never gets in the way on the shared Mac**: clicks, scrolling and hovering always reach the app underneath, Tandem never becomes the active app, and the keyboard stays put (now covered by tests and a live check). ⌃⌥G is only taken while a Glance is showing, so other apps keep it otherwise; the overlay hides during Mission Control, no longer jumps displays when you click into another screen, and stops saying "Writing…" if the asking Mac disconnects mid-answer.
+
 ### 1.7.0 — October 1, 2026
 
 - **Glance**: put a note, pasted text or an AI answer in a see-through overlay on the shared Mac's screen, Glance-style: clicks pass through it, it never takes focus, and it's never in what that Mac shares. Open it from the live view's **Glance** button (⇧⌘G), the **Glance** button under any answer, or **Latest Answer**; **Follow answers** streams each new answer onto the shared Mac as it's written, and **Live typing** sends each keystroke.
