@@ -190,6 +190,12 @@ Speech recognition uses [Parakeet TDT 0.6B v2](https://huggingface.co/nvidia/par
 Newest first. Each version is also published, with its download, on the repository's [Releases](https://github.com/RephaelCongmon/tandem/releases) page, and **Update Now** in the app installs it.
 
 <!-- update-log:start -->
+### 1.7.0 — October 1, 2026
+
+- **Glance**: put a note, pasted text or an AI answer in a see-through overlay on the shared Mac's screen, Glance-style: clicks pass through it, it never takes focus, and it's never in what that Mac shares. Open it from the live view's **Glance** button (⇧⌘G), the **Glance** button under any answer, or **Latest Answer**; **Follow answers** streams each new answer onto the shared Mac as it's written, and **Live typing** sends each keystroke.
+- Move, resize and scroll it in real time from a stand-in on the live view that sits exactly where the overlay is: drag it, drag its corner, or scroll over it with the trackpad (about 3–4 ms round trip on one Mac). The bar adds line/page scrolling, corner presets, sizes, the shared Mac's display, text size and backdrop opacity; ⌃⌥↑/⌃⌥↓ scroll it from any app and ⌃⌥G hides it.
+- On the shared Mac, ⌃⌥G, the menu bar or the window's Glance card hides it, and Settings › Sharing can turn Glance off. Long code wraps and wide tables become compact cards, so everything stays readable. The Glance comes back after either Mac restarts. Both Macs need 1.7.
+
 ### 1.6.2 — September 30, 2026
 
 - **One-step Select region.** Click **Select region** (⇧⌘S) once and it becomes a tool. Drag over the live view, and when you let go that part of the shared screen is in the composer at full resolution, a fraction of a second later. Keep dragging to add more; **Whole Screen** adds the entire frame; **Done** (esc) turns the tool off.
