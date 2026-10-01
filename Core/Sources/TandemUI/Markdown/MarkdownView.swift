@@ -16,6 +16,9 @@ public struct MarkdownStyle: Hashable, Sendable {
     public var codeFont: Font
     /// Code blocks get a Copy button (off where nothing can be clicked, like the Glance overlay).
     public var showsCopyButtons: Bool
+    /// Wrap code and stack tables that don't fit, instead of scrolling sideways (for views
+    /// nobody can scroll, like the click-through Glance overlay).
+    public var wrapsWideContent: Bool
 
     /// Creates a style. `codeFont` defaults to the design system's mono font for the density.
     public init(
@@ -23,13 +26,15 @@ public struct MarkdownStyle: Hashable, Sendable {
         textColor: Color = Theme.textPrimary,
         compact: Bool = false,
         codeFont: Font? = nil,
-        showsCopyButtons: Bool = true
+        showsCopyButtons: Bool = true,
+        wrapsWideContent: Bool = false
     ) {
         self.bodyFont = bodyFont
         self.textColor = textColor
         self.compact = compact
         self.codeFont = codeFont ?? (compact ? TandemFont.monoSmall : TandemFont.mono)
         self.showsCopyButtons = showsCopyButtons
+        self.wrapsWideContent = wrapsWideContent
     }
 
     /// Chat-thread density: 13.5 pt body.
@@ -264,14 +269,23 @@ struct CodeBlockView: View {
         VStack(alignment: .leading, spacing: 0) {
             header(metrics)
             Hairline()
-            HorizontalOverflow {
-                Text(verbatim: code.isEmpty ? " " : code)
-                    .font(style.codeFont)
-                    .foregroundStyle(Theme.textPrimary)
-                    .lineSpacing(metrics.codeLineSpacing)
-                    .fixedSize()
+            let text = Text(verbatim: code.isEmpty ? " " : code)
+                .font(style.codeFont)
+                .foregroundStyle(Theme.textPrimary)
+                .lineSpacing(metrics.codeLineSpacing)
+            if style.wrapsWideContent {
+                text
+                    .fixedSize(horizontal: false, vertical: true)
                     .padding(.horizontal, metrics.codeHorizontalPadding)
                     .padding(.vertical, metrics.codeVerticalPadding)
+                    .frame(maxWidth: .infinity, alignment: .leading)
+            } else {
+                HorizontalOverflow {
+                    text
+                        .fixedSize()
+                        .padding(.horizontal, metrics.codeHorizontalPadding)
+                        .padding(.vertical, metrics.codeVerticalPadding)
+                }
             }
         }
         .frame(maxWidth: .infinity, alignment: .leading)
@@ -417,10 +431,21 @@ struct MarkdownTableView: View {
     let style: MarkdownStyle
 
     var body: some View {
+        if style.wrapsWideContent {
+            // A table that doesn't fit becomes one card per row, so every column stays readable.
+            ViewThatFits(in: .horizontal) {
+                grid
+                stacked
+            }
+        } else {
+            HorizontalOverflow { grid }
+        }
+    }
+
+    private var grid: some View {
         let metrics = style.metrics
         let columns = table.header.count
-        HorizontalOverflow {
-            Grid(alignment: .leading, horizontalSpacing: 0, verticalSpacing: 0) {
+        return Grid(alignment: .leading, horizontalSpacing: 0, verticalSpacing: 0) {
                 GridRow {
                     ForEach(0..<columns, id: \.self) { column in
                         cell(table.header[column], column: column, isHeader: true, metrics: metrics)
@@ -442,6 +467,44 @@ struct MarkdownTableView: View {
                 RoundedRectangle(cornerRadius: Radius.m, style: .continuous)
                     .strokeBorder(Theme.stroke, lineWidth: 1)
             )
+    }
+
+    private var stacked: some View {
+        let metrics = style.metrics
+        return VStack(alignment: .leading, spacing: metrics.tightItemSpacing) {
+            ForEach(table.rows.indices, id: \.self) { row in
+                // One line per column: its name, then the value (which wraps).
+                Grid(alignment: .leadingFirstTextBaseline, horizontalSpacing: metrics.cellHorizontalPadding, verticalSpacing: metrics.tightItemSpacing) {
+                    ForEach(table.header.indices, id: \.self) { column in
+                        GridRow {
+                            InlineText(
+                                source: Self.replacingLineBreakTags(table.header[column]),
+                                font: TandemFont.micro,
+                                codeFont: style.codeFont,
+                                color: Theme.textSecondary,
+                                lineSpacing: metrics.lineSpacing
+                            )
+                            .fixedSize()
+                            InlineText(
+                                source: Self.replacingLineBreakTags(column < table.rows[row].count ? table.rows[row][column] : ""),
+                                font: style.bodyFont,
+                                codeFont: style.codeFont,
+                                color: style.textColor,
+                                lineSpacing: metrics.lineSpacing
+                            )
+                            .frame(maxWidth: .infinity, alignment: .leading)
+                        }
+                    }
+                }
+                .padding(.horizontal, metrics.cellHorizontalPadding)
+                .padding(.vertical, metrics.cellVerticalPadding)
+                .frame(maxWidth: .infinity, alignment: .leading)
+                .background(Theme.surfaceRaised.opacity(0.5), in: RoundedRectangle(cornerRadius: Radius.m, style: .continuous))
+                .overlay(
+                    RoundedRectangle(cornerRadius: Radius.m, style: .continuous)
+                        .strokeBorder(Theme.stroke, lineWidth: 1)
+                )
+            }
         }
     }
 

@@ -219,6 +219,8 @@ final class SettingsStore {
     var glanceFrame: GlanceFrame = .standard { didSet { store(glanceFrame, "glance.frame") } }
     var glanceOpacity: Double = GlanceLayout.defaultOpacity { didSet { store(glanceOpacity, "glance.opacity") } }
     var glanceTextScale: Double = 1 { didSet { store(glanceTextScale, "glance.textScale") } }
+    /// The shared Mac's display the Glance goes on; nil follows what's shared.
+    var glanceDisplayID: String? = nil { didSet { store(glanceDisplayID, "glance.displayID") } }
     /// Show each new AI answer in the Glance as it's written.
     var glanceFollowAnswers: Bool = false { didSet { store(glanceFollowAnswers, "glance.followAnswers") } }
     /// Send the Glance text field as it's typed.
@@ -295,6 +297,7 @@ final class SettingsStore {
         glanceFrame = load("glance.frame", .standard)
         glanceOpacity = load("glance.opacity", GlanceLayout.defaultOpacity)
         glanceTextScale = load("glance.textScale", 1)
+        glanceDisplayID = load("glance.displayID", nil)
         glanceFollowAnswers = load("glance.followAnswers", false)
         glanceLiveTyping = load("glance.liveTyping", false)
         glanceDocument = load("glance.document", nil)

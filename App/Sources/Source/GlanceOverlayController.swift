@@ -186,7 +186,7 @@ final class GlanceOverlayController {
 
     private func refresh(animated: Bool) {
         let wanted = settings.allowGlance && !isHiddenHere && layout.isVisible && hasGlance
-        guard wanted, let target = placement() else {
+        guard wanted, let target = target() else {
             panel?.orderOut(nil)
             isOnScreen = false
             return
@@ -299,13 +299,14 @@ final class GlanceOverlayController {
 
     func status(for connectionID: UUID?) -> GlanceStatus {
         let screen: GlanceScreen
-        if let target = placement() {
+        if let target = target() {
             let frame = target.screen.frame
             screen = GlanceScreen(
                 width: frame.width,
                 height: frame.height,
                 visibleFrame: GlanceFrame(rect: target.screen.visibleFrame, in: frame),
-                isSharedDisplay: target.isSharedDisplay
+                isSharedDisplay: target.isSharedDisplay,
+                displayID: target.screen.displayID.map(String.init)
             )
         } else {
             screen = GlanceScreen(width: 1440, height: 900, visibleFrame: .unit, isSharedDisplay: false)
@@ -328,8 +329,29 @@ final class GlanceOverlayController {
             scrollOffset: offset,
             contentHeight: measured.content,
             viewportHeight: measured.viewport,
-            screen: screen
+            screen: screen,
+            displays: displays
         )
+    }
+
+    /// The display the Studio chose, if it's still connected; else where `placement` puts it.
+    private func target() -> (screen: NSScreen, isSharedDisplay: Bool)? {
+        let shared = placement()
+        guard let id = layout.displayID, let chosen = NSScreen.screens.first(where: { $0.displayID.map(String.init) == id }) else {
+            return shared
+        }
+        let isShared = shared?.isSharedDisplay == true && shared?.screen.displayID == chosen.displayID
+        return (chosen, isShared)
+    }
+
+    /// This Mac's displays, for the Studio's display menu.
+    private var displays: [GlanceDisplay] {
+        let shared = placement()
+        return NSScreen.screens.compactMap { screen in
+            guard let id = screen.displayID else { return nil }
+            let isShared = shared?.isSharedDisplay == true && shared?.screen.displayID == id
+            return GlanceDisplay(id: String(id), name: screen.localizedName, isShared: isShared)
+        }
     }
 
     // MARK: Where

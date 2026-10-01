@@ -25,8 +25,9 @@ struct GlanceOverlayView: View {
     static let panelColor = Color(red: 0.045, green: 0.052, blue: 0.061)
     static let mint = Color(red: 0.57, green: 0.91, blue: 0.76)
     static let cornerRadius: CGFloat = 14
-    /// Glance's 14 pt text; no Copy buttons, since clicks pass through the overlay.
-    static let markdownStyle = MarkdownStyle(bodyFont: .system(size: 14), textColor: .white, showsCopyButtons: false)
+    /// Glance's 14 pt text. Clicks pass through the overlay, so there are no Copy buttons, and
+    /// code and tables that don't fit wrap rather than scroll sideways.
+    static let markdownStyle = MarkdownStyle(bodyFont: .system(size: 14), textColor: .white, showsCopyButtons: false, wrapsWideContent: true)
     /// Space above and below the text inside the scrolling area.
     static let textInsets = EdgeInsets(top: 2, leading: 16, bottom: 14, trailing: 16)
 

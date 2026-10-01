@@ -14,8 +14,10 @@ final class GlanceTests: XCTestCase {
             .glanceContent(GlanceContent(documentID: id, revision: 2, text: " then ✅ 日本語", appendingToUTF8Count: 30, origin: .answer, isStreaming: true)),
             .glanceLayout(GlanceLayout(sequence: 42, isVisible: true, frame: GlanceFrame(x: 0.1, y: 0.2, width: 0.3, height: 0.4), scrollOffset: 120.5, animated: true, backgroundOpacity: 0.6, textScale: 1.25, sentAtNanos: 1_790_000_000_123_456_789)),
             .glanceLayout(GlanceLayout(sequence: 43, isVisible: false, isResync: true)),
+            .glanceLayout(GlanceLayout(sequence: 44, displayID: "69733382")),
             .glanceContent(GlanceContent(documentID: id, revision: 3, text: "again", origin: .note, isStreaming: false, isResync: true)),
-            .glanceStatus(GlanceStatus(state: .showing, documentID: id, revision: 2, layoutSequence: 42, frame: .standard, scrollOffset: 120.5, contentHeight: 900, viewportHeight: 300, screen: screen)),
+            .glanceStatus(GlanceStatus(state: .showing, documentID: id, revision: 2, layoutSequence: 42, frame: .standard, scrollOffset: 120.5, contentHeight: 900, viewportHeight: 300, screen: screen,
+                                       displays: [GlanceDisplay(id: "1", name: "Built-in Retina Display", isShared: true), GlanceDisplay(id: "69733382", name: "Studio Display", isShared: false)])),
             .glanceStatus(GlanceStatus(state: .hiddenOnSource, documentID: nil, revision: 0, needsFullText: true, isFromYou: false, layoutSequence: 0, frame: .standard, scrollOffset: 0, contentHeight: 0, viewportHeight: 0, screen: screen))
         ]
         for message in messages {

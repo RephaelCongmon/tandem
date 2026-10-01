@@ -403,6 +403,7 @@ struct GlanceControlBar: View {
                 }
             }
             sizeMenu
+            displayMenu
             Menu("Text Size") {
                 Button("Larger") { glance.stepTextScale(1) }
                 Button("Smaller") { glance.stepTextScale(-1) }
@@ -429,6 +430,24 @@ struct GlanceControlBar: View {
         .help("Live typing, following answers, position, size, text and backdrop")
     }
 
+    /// Which of the shared Mac's displays it's on (only when it has several).
+    @ViewBuilder
+    private var displayMenu: some View {
+        let glance = model.studio.glance
+        if !glance.displays.isEmpty {
+            Menu("Display") {
+                Toggle("Whichever Is Shared", isOn: Binding(get: { glance.layout.displayID == nil }, set: { if $0 { glance.setDisplay(nil) } }))
+                Divider()
+                ForEach(glance.displays) { display in
+                    Toggle(display.isShared ? "\(display.name) (shared)" : display.name, isOn: Binding(
+                        get: { glance.layout.displayID == display.id },
+                        set: { if $0 { glance.setDisplay(display.id) } }
+                    ))
+                }
+            }
+        }
+    }
+
     @ViewBuilder
     private var sizeMenu: some View {
         let glance = model.studio.glance
@@ -453,6 +472,7 @@ struct GlanceControlBar: View {
                 }
             }
             sizeMenu
+            displayMenu
         } label: {
             Image(systemName: "square.grid.3x3.square")
                 .font(.system(size: 13, weight: .semibold))
@@ -463,7 +483,7 @@ struct GlanceControlBar: View {
         .buttonStyle(.plain)
         .menuIndicator(.hidden)
         .fixedSize()
-        .help("Snap the Glance to a corner or edge, or pick a size")
+        .help("Snap the Glance to a corner or edge, pick a size, or choose the shared Mac's display")
     }
 
     private func status(showsLabel: Bool) -> some View {

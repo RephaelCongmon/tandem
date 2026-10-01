@@ -153,6 +153,21 @@ final class GlanceInjectorTests: XCTestCase {
         XCTAssertEqual(glance.layout.frame.width, GlanceFrame.standard.width, accuracy: 1e-9)
     }
 
+    func testChoosingADisplayIsRemembered() {
+        let settings = makeSettings()
+        let glance = GlanceInjector(settings: settings)
+        var report = status()
+        XCTAssertTrue(glance.displays.isEmpty, "no menu until the Source reports several displays")
+        report.displays = [GlanceDisplay(id: "1", name: "Built-in", isShared: true), GlanceDisplay(id: "2", name: "Studio Display", isShared: false)]
+        glance.handle(report)
+        XCTAssertEqual(glance.displays.map(\.id), ["1", "2"])
+        glance.setDisplay("2")
+        XCTAssertEqual(glance.layout.displayID, "2")
+        XCTAssertEqual(GlanceInjector(settings: settings).layout.displayID, "2")
+        glance.setDisplay(nil)
+        XCTAssertNil(settings.glanceDisplayID)
+    }
+
     func testNeedsAConnection() {
         let glance = GlanceInjector(settings: makeSettings())
         XCTAssertEqual(glance.problem, "Connect to the shared Mac to use Glance.")

@@ -210,6 +210,9 @@ enum DebugCommands {
             if values.count == 4 { model.studio.glance.setFrame(GlanceFrame(x: values[0], y: values[1], width: values[2], height: values[3]), animated: false) }
         case "glancePlace":
             if let placement = GlancePlacement(rawValue: argument) { model.studio.glance.place(placement) }
+        case "glanceDisplay":
+            // glanceDisplay <display id> | shared
+            model.studio.glance.setDisplay(argument == "shared" || argument.isEmpty ? nil : argument)
         case "glanceVisible":
             model.studio.glance.setVisible(argument != "off")
         case "glanceOpacity":

@@ -83,7 +83,8 @@ final class GlanceInjector {
             isVisible: true,
             frame: settings.glanceFrame,
             backgroundOpacity: settings.glanceOpacity,
-            textScale: settings.glanceTextScale
+            textScale: settings.glanceTextScale,
+            displayID: settings.glanceDisplayID
         ).sanitized
         if let saved = settings.glanceDocument, !saved.text.isEmpty {
             // A fresh document with the same text: the Source replaces whatever it holds.
@@ -391,6 +392,18 @@ final class GlanceInjector {
         frame.width = min(start.width + dx, visible.maxX - start.x)
         frame.height = min(start.height + dy, visible.maxY - start.y)
         setFrame(frame, animated: false)
+    }
+
+    /// The shared Mac's displays, when it has more than one.
+    var displays: [GlanceDisplay] { (remote?.displays.count ?? 0) > 1 ? remote?.displays ?? [] : [] }
+
+    /// Puts the overlay on one of the shared Mac's displays (nil: whichever is shared). It keeps
+    /// its place relative to the screen.
+    func setDisplay(_ id: String?) {
+        guard layout.displayID != id else { return }
+        layout.displayID = id
+        settings.glanceDisplayID = id
+        scheduleLayout(animated: false)
     }
 
     func place(_ placement: GlancePlacement) {

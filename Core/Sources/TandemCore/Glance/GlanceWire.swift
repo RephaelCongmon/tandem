@@ -185,8 +185,10 @@ public struct GlanceLayout: Codable, Sendable, Hashable {
     public var sentAtNanos: UInt64?
     /// Sent on connecting rather than by the user (see `GlanceContent.isResync`).
     public var isResync: Bool?
+    /// The Source display to show it on (`GlanceDisplay.id`); nil follows what's shared.
+    public var displayID: String?
 
-    public init(sequence: UInt64 = 0, isVisible: Bool = true, frame: GlanceFrame = .standard, scrollOffset: Double = 0, animated: Bool = false, backgroundOpacity: Double = GlanceLayout.defaultOpacity, textScale: Double = 1, sentAtNanos: UInt64? = nil, isResync: Bool? = nil) {
+    public init(sequence: UInt64 = 0, isVisible: Bool = true, frame: GlanceFrame = .standard, scrollOffset: Double = 0, animated: Bool = false, backgroundOpacity: Double = GlanceLayout.defaultOpacity, textScale: Double = 1, sentAtNanos: UInt64? = nil, isResync: Bool? = nil, displayID: String? = nil) {
         self.sequence = sequence
         self.isVisible = isVisible
         self.frame = frame
@@ -196,6 +198,7 @@ public struct GlanceLayout: Codable, Sendable, Hashable {
         self.textScale = textScale
         self.sentAtNanos = sentAtNanos
         self.isResync = isResync
+        self.displayID = displayID
     }
 
     /// Values a peer may have sent out of range, made safe to show.
@@ -209,6 +212,21 @@ public struct GlanceLayout: Codable, Sendable, Hashable {
     }
 }
 
+/// One of the Source's displays, for choosing where the overlay goes.
+public struct GlanceDisplay: Codable, Sendable, Hashable, Identifiable {
+    /// The display's ID on the Source (as in `CaptureSourceID` for displays).
+    public var id: String
+    public var name: String
+    /// It's the display being shared.
+    public var isShared: Bool
+
+    public init(id: String, name: String, isShared: Bool) {
+        self.id = id
+        self.name = name
+        self.isShared = isShared
+    }
+}
+
 /// The screen the overlay is on, as the Source sees it.
 public struct GlanceScreen: Codable, Sendable, Hashable {
     /// Size in points.
@@ -218,12 +236,15 @@ public struct GlanceScreen: Codable, Sendable, Hashable {
     public var visibleFrame: GlanceFrame
     /// The overlay is on the display being shared, so its frame maps straight onto the live video.
     public var isSharedDisplay: Bool
+    /// Which display it is (`GlanceDisplay.id`).
+    public var displayID: String?
 
-    public init(width: Double, height: Double, visibleFrame: GlanceFrame, isSharedDisplay: Bool) {
+    public init(width: Double, height: Double, visibleFrame: GlanceFrame, isSharedDisplay: Bool, displayID: String? = nil) {
         self.width = width
         self.height = height
         self.visibleFrame = visibleFrame
         self.isSharedDisplay = isSharedDisplay
+        self.displayID = displayID
     }
 }
 
@@ -257,8 +278,10 @@ public struct GlanceStatus: Codable, Sendable, Hashable {
     public var contentHeight: Double
     public var viewportHeight: Double
     public var screen: GlanceScreen
+    /// Every display the Source has, for choosing where the overlay goes.
+    public var displays: [GlanceDisplay]
 
-    public init(state: State, documentID: UUID?, revision: Int, needsFullText: Bool = false, isFromYou: Bool = true, layoutSequence: UInt64, frame: GlanceFrame, scrollOffset: Double, contentHeight: Double, viewportHeight: Double, screen: GlanceScreen) {
+    public init(state: State, documentID: UUID?, revision: Int, needsFullText: Bool = false, isFromYou: Bool = true, layoutSequence: UInt64, frame: GlanceFrame, scrollOffset: Double, contentHeight: Double, viewportHeight: Double, screen: GlanceScreen, displays: [GlanceDisplay] = []) {
         self.state = state
         self.documentID = documentID
         self.revision = revision
@@ -270,6 +293,7 @@ public struct GlanceStatus: Codable, Sendable, Hashable {
         self.contentHeight = contentHeight
         self.viewportHeight = viewportHeight
         self.screen = screen
+        self.displays = displays
     }
 
     /// How far the text can scroll.
