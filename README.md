@@ -14,6 +14,7 @@ It's built for moments like: your work laptop can't run AI tools but your person
 - **Hears the meeting, too.** Turn on **Listen** and the Source's computer audio streams to the Studio (Opus, about 30 kbps) and is transcribed on-device as it's spoken, about a second behind, by NVIDIA's **Parakeet** model on the Neural Engine (about a quarter fewer mistakes than Apple's recognizer on conversation). **Follow-up** finds the question just asked out loud, or on screen, and answers it in a few plain sentences. The transcript also goes with every other question, so the AI knows what's being discussed.
 - **Remembers the conversation.** With Claude Code, each thread keeps a live session, so a follow-up sends only what's new and starts answering sooner. Earlier questions, answers, screenshots and transcripts stay in context.
 - **Answers on both Macs.** Replies can be mirrored back to the Source's window and menu bar.
+- **Glance Inject.** Paste text or send an AI answer directly into a translucent, click-through overlay on the shared Mac. Move, resize and scroll it from the asking Mac while the shared Mac keeps its keyboard focus.
 - **Private by design.** Pairing is confirmed with a 6-digit code; every session is end-to-end encrypted and mutually authenticated. Screenshots go only to the AI provider you choose, on your own subscription or key, and stay in memory unless you opt to keep them.
 
 ## Requirements
@@ -43,6 +44,7 @@ It's built for moments like: your work laptop can't run AI tools but your person
 - The ⏱ control turns on **auto-capture** and sets the interval; the menu also chooses whether each capture asks the AI or just updates the composer, and whether to skip unchanged screens.
 - **Skills** are one-click buttons above the message field: **Debug**, **New Problem** and **Follow-up** to start with. Each uses your selected pictures when **Use on send** is on, what was just said (when **Listen** is on), that skill's instructions, and your typed context. With no selected pictures it sends no new screenshot. The thread shows just the skill's name. ⌘1–⌘9 trigger the first nine. Add, edit and reorder skills in Settings › Skills, or with the ⚙ button next to them.
 - **Listen** (in the composer, or ⌥⌘L) transcribes the shared Mac's computer audio. See [Listening](#listening-to-the-shared-macs-audio).
+- **Glance Inject** in the toolbar opens a text draft: paste or type, then click **Inject text**. The overlay icon beside an AI answer injects that response immediately. Drag the miniature display to position it; choose the shared display, size, opacity and font, then scroll with the slider or arrow buttons. **Hide** keeps the content for later; **Clear** removes it. Both Macs need this Glance Inject candidate.
 - The toolbar model menu switches provider, model and reasoning effort. The **Reasoning** chip under the message field changes the reasoning level (Fast, Balanced, Thorough, Deep, Maximum) from your next question on, offering only the levels the current model supports.
 - The **Source** menu on the live view lets you choose which display, window or camera the other Mac shares (if it allows that).
 
@@ -50,6 +52,7 @@ It's built for moments like: your work laptop can't run AI tools but your person
 - The window shows exactly what's being shared, who's watching, and over which link.
 - **Send Snapshot** (⌃⌥S from any app) pushes a screenshot; **Send with Note…** (⌃⌥N) opens a small panel to add context first. The answer appears on the Studio and, optionally, on this Mac too.
 - **Pause** (⌃⌥P) stops all capture instantly. Sharing also pauses automatically while the Mac is locked.
+- The **Glance Inject** card shows who controls the overlay and lets you hide it or turn injection off. Pausing, locking, capture interruption or the controlling Mac disconnecting clears it; reconnecting does not replay old text. Settings › Sharing also controls whether injection is allowed.
 
 ### Listening to the shared Mac's audio
 

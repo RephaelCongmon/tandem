@@ -11,6 +11,7 @@ import TandemCore
 @MainActor
 @Observable
 final class SourceEngine {
+    let glance = GlanceOverlayController()
     enum CaptureState: Equatable {
         case idle
         case starting
@@ -58,6 +59,7 @@ final class SourceEngine {
     /// A session is waiting for approval from someone at this Mac.
     @ObservationIgnored var onNeedsDecision: (() -> Void)?
     private(set) var isLockPaused = false
+    private(set) var isGlanceLockPaused = false
     private(set) var lastReply: ReplyMirror?
     private(set) var lastPush: PushFeedback?
     private(set) var streamStats = VideoFanout.Stats()
@@ -145,6 +147,7 @@ final class SourceEngine {
             onMain { self?.audioInterrupted(error) }
         }
         observeLockState()
+        glance.onChange = { [weak self] in self?.broadcastGlance() }
     }
 
     // MARK: Lifecycle
@@ -155,6 +158,7 @@ final class SourceEngine {
     }
 
     func deactivate() {
+        glance.reset()
         invalidateFrozenSnapshots()
         for viewer in viewers { fanout.removeViewer(id: viewer.id) }
         viewers.removeAll()
@@ -234,6 +238,7 @@ final class SourceEngine {
 
     func detach(_ connection: PeerConnection) {
         guard viewers.contains(where: { $0.id == connection.id }) else { return }
+        if glance.session.owner == connection.id { glance.reset() }
         updateReceiver.connectionClosed(connection)
         connection.ackSink.value = nil
         connection.onControl = nil
@@ -263,6 +268,21 @@ final class SourceEngine {
     private func handle(_ message: ControlMessage, from connection: PeerConnection) {
         guard let index = viewers.firstIndex(where: { $0.id == connection.id }) else { return }
         switch message {
+        case .glanceCommand(let command):
+            guard viewers[index].approved, connection.isConnected, !connection.isClosing else {
+                connection.send(.control(.glanceStatus(.init(enabled: false, error: "Waiting for approval on the shared Mac."))))
+                return
+            }
+            guard settings.allowGlanceInject, isActive, !isGlanceLockPaused else {
+                connection.send(.control(.glanceStatus(glanceStatus(for: connection.id))))
+                return
+            }
+            glance.preferredDisplayID = selectedSource?.kind == .display ? selectedSource?.id : nil
+            if let error = glance.apply(command, from: connection.id, ownerName: viewers[index].name) {
+                connection.send(.control(.glanceStatus(glanceStatus(for: connection.id, error: error))))
+            } else if command.isQuery {
+                connection.send(.control(.glanceStatus(glanceStatus(for: connection.id))))
+            } else { broadcastGlance() }
         case .streamRequest(let request):
             viewers[index].streamRequest = request
             reconcile()
@@ -303,12 +323,34 @@ final class SourceEngine {
 
     // MARK: Sharing controls
 
+    func glanceSettingChanged() {
+        if !settings.allowGlanceInject { glance.reset() }
+        broadcastGlance()
+    }
+
+    private func broadcastGlance() {
+        for viewer in viewers where viewer.approved && viewer.connection.isConnected && !viewer.connection.isClosing {
+            guard viewer.connection.remoteHello?.capabilities.contains(PeerHello.Capability.glanceInject) == true else { continue }
+            viewer.connection.send(.control(.glanceStatus(glanceStatus(for: viewer.id))))
+        }
+    }
+
+    private func glanceStatus(for viewer: UUID, error: String? = nil) -> GlanceStatus {
+        var status = glance.status(for: viewer, error: error)
+        status.enabled = settings.allowGlanceInject && isActive && !isGlanceLockPaused
+        if !settings.allowGlanceInject { status.error = "Glance Inject is disabled on the shared Mac." }
+        else if isGlanceLockPaused { status.error = "Glance Inject is paused while the shared Mac is locked." }
+        else if !isActive { status.error = "Sharing is paused on the shared Mac." }
+        return status
+    }
+
     var selectedSource: CaptureSourceID? {
         settings.captureSource ?? catalog.first(where: { $0.source.kind == .display })?.source
     }
 
     func setSharing(_ enabled: Bool) {
         isSharingEnabled = enabled
+        if !enabled { glance.reset() }
         if !enabled { invalidateFrozenSnapshots() }
         if enabled {
             pauseReason = nil
@@ -488,7 +530,8 @@ final class SourceEngine {
 
     /// Capture stopped on its own. Never widen what's shared (e.g. from a closed
     /// window to the whole display): pause and let the Source user decide.
-    private func captureInterrupted(_ error: Error?) {
+    func captureInterrupted(_ error: Error?) {
+        glance.reset()
         invalidateFrozenSnapshots()
         runningSource = nil
         runningConfig = nil
@@ -991,6 +1034,15 @@ final class SourceEngine {
 
     // MARK: Screen lock
 
+    func screenLockChanged(_ locked: Bool) {
+        isGlanceLockPaused = locked
+        if locked { glance.reset() }
+        isLockPaused = locked && settings.pauseWhenLocked
+        if isLockPaused { invalidateFrozenSnapshots() }
+        reconcile()
+        broadcastGlance()
+    }
+
     /// Whether the login session's screen is locked right now.
     static var isScreenLocked: Bool {
         guard let session = CGSessionCopyCurrentDictionary() as? [String: Any] else { return false }
@@ -1003,21 +1055,21 @@ final class SourceEngine {
         #else
         let ignoreLock = false
         #endif
-        if settings.pauseWhenLocked, !ignoreLock, Self.isScreenLocked { isLockPaused = true }
+        if !ignoreLock, Self.isScreenLocked {
+            isGlanceLockPaused = true
+            isLockPaused = settings.pauseWhenLocked
+        }
         let center = DistributedNotificationCenter.default()
         observers.append(center.addObserver(forName: Notification.Name("com.apple.screenIsLocked"), object: nil, queue: .main) { [weak self] _ in
             MainActor.assumeIsolated {
-                guard let self, self.settings.pauseWhenLocked, !ignoreLock else { return }
-                self.isLockPaused = true
-                self.invalidateFrozenSnapshots()
-                self.reconcile()
+                guard let self, !ignoreLock else { return }
+                self.screenLockChanged(true)
             }
         })
         observers.append(center.addObserver(forName: Notification.Name("com.apple.screenIsUnlocked"), object: nil, queue: .main) { [weak self] _ in
             MainActor.assumeIsolated {
                 guard let self else { return }
-                self.isLockPaused = false
-                self.reconcile()
+                self.screenLockChanged(false)
             }
         })
     }

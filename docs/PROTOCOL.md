@@ -75,6 +75,7 @@ Audio is mono 16 kHz. Opus frames are 20 ms (32 kbps), and a packet carries five
 - `sourceCatalogRequest`, `sourceCatalog`, `selectSource`
 - `automationStatus`
 - `replyMirror`
+- `glanceCommand`, `glanceStatus` (see Glance Inject below)
 - `audioRequest {enabled, codecs}` (Studio → Source): start or stop sending computer audio; `codecs` lists what the Studio can decode, best first
 - `audioStatus {state, message, codec, sampleRate}` (Source → Studio): `off`, `starting`, `live`, `paused`, `needsPermission`, `notAllowed` or `error`
 - `updateOffer {id, version, build, byteCount, sha256}` (Studio → Source): a newer Tandem, as a zip of the signed app; `updateReply {id, accepted, reason}`; then `updateChunk`s; `updateStatus {id, phase, fraction, message}` (Source → Studio): `receiving`, `verifying`, `installing`, `restarting` or `failed`
@@ -110,6 +111,16 @@ send a region the moment the user lets go:
 
 With an older Source (no `regionTool`), the Studio waits for each freeze's preview before
 sending its crop. With no `regionSnapshots`, it asks the user to update the shared Mac.
+
+### Glance Inject
+
+Peers advertise `glanceInject`; Studios send these messages only to a capable Source. `glanceCommand {revision, content?, layout?, visible?, scrollFraction?, clear}` travels at control priority. An empty command queries status. Content includes a title and at most 64 KiB of UTF-8 text; invalid text or non-finite geometry is rejected before any state changes.
+
+Layout carries the display ID, normalized position, width/height fractions, opacity and font size. Position is the fraction of usable space left after placing the panel, measured from the top-left. The Source clamps layout to safe ranges and available display bounds. Scrolling uses an absolute fraction of the actual maximum point offset, so resizing cannot accumulate scroll drift.
+
+Only approved connected viewers can inject while sharing is active, unlocked and injection is enabled. Explicit content takes ownership of a single overlay; only its owner can subsequently adjust, hide or clear it. Revisions are monotonic per viewer throughout that connection's overlay session, including ownership changes and clears. Pause, interruption, lock, owner disconnect and Source deactivation reset the session.
+
+`glanceStatus` reports revision, bounded layout, visibility, enabled policy, content presence, ownership, scroll fraction/maximum point offset, available displays, owner name and an optional error. It never echoes the injected text. Studio coalesces placement and scroll updates to 30 Hz, ignores stale successful acknowledgements and cancels queued changes on detach. Reconnect sends only a status query.
 
 ### Scheduling
 

@@ -177,6 +177,7 @@ final class SettingsStore {
     var acceptPairingRequests: Bool = true { didSet { store(acceptPairingRequests, "source.acceptPairing") } }
     var approveEachSession: Bool = false { didSet { store(approveEachSession, "source.approveEachSession") } }
     var showRepliesOnSource: Bool = true { didSet { store(showRepliesOnSource, "source.showReplies") } }
+    var allowGlanceInject: Bool = true { didSet { store(allowGlanceInject, "source.allowGlanceInject") } }
     var pauseWhenLocked: Bool = true { didSet { store(pauseWhenLocked, "source.pauseWhenLocked") } }
     var snapshotResolution: SnapshotResolution = .high { didSet { store(snapshotResolution, "source.snapshotResolution") } }
     var snapshotQuality: Double = 0.9 { didSet { store(snapshotQuality, "source.snapshotQuality") } }
@@ -274,6 +275,7 @@ final class SettingsStore {
         acceptPairingRequests = load("source.acceptPairing", true)
         approveEachSession = load("source.approveEachSession", false)
         showRepliesOnSource = load("source.showReplies", true)
+        allowGlanceInject = load("source.allowGlanceInject", true)
         pauseWhenLocked = load("source.pauseWhenLocked", true)
         snapshotResolution = load("source.snapshotResolution", .high)
         snapshotQuality = load("source.snapshotQuality", 0.9)

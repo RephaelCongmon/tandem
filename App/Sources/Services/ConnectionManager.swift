@@ -598,7 +598,7 @@ final class ConnectionManager {
             lastFailure = nil
         }
         rebuildNearby()
-        connection.send(.control(.hello(PeerHello(role: role?.peerRole ?? .studio, appVersion: AppEnvironment.shortVersion, capabilities: [PeerHello.Capability.audio, PeerHello.Capability.peerUpdate, PeerHello.Capability.regionSnapshots, PeerHello.Capability.regionTool]))))
+        connection.send(.control(.hello(PeerHello(role: role?.peerRole ?? .studio, appVersion: AppEnvironment.shortVersion, capabilities: [PeerHello.Capability.audio, PeerHello.Capability.peerUpdate, PeerHello.Capability.regionSnapshots, PeerHello.Capability.regionTool, PeerHello.Capability.glanceInject]))))
         log.info("Connected to \(peer.name, privacy: .private) over \(linkKind.displayName, privacy: .public)")
         onEstablished?(connection)
     }

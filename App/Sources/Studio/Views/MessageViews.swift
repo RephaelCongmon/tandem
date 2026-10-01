@@ -141,6 +141,18 @@ private struct AssistantMessageView: View {
             Text(Formatters.time(message.createdAt))
                 .font(TandemFont.caption)
                 .foregroundStyle(Theme.textTertiary)
+            if streaming == nil {
+                Button {
+                    model.studio.glance.inject(message.text, title: "AI response · \(modelName)")
+                } label: {
+                    Image(systemName: "rectangle.on.rectangle")
+                }
+                .buttonStyle(.plain)
+                .foregroundStyle(Theme.accent)
+                .accessibilityLabel("Inject into Glance")
+                .help("Show this answer in Glance on the shared Mac")
+                .disabled(message.text.isEmpty || !model.studio.glance.canInject)
+            }
         }
     }
 

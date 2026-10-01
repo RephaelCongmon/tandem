@@ -128,6 +128,8 @@ private struct SharingSettings: View {
                 Toggle("Accept new pairing requests", isOn: $settings.acceptPairingRequests)
                 Toggle("Ask before each session, even from paired Macs", isOn: $settings.approveEachSession)
                 Toggle("Show the AI's answers on this Mac", isOn: $settings.showRepliesOnSource)
+                Toggle("Allow Glance Inject from the paired Mac", isOn: $settings.allowGlanceInject)
+                    .onChange(of: settings.allowGlanceInject) { _, _ in model.source.glanceSettingChanged() }
             }
         }
         .formStyle(.grouped)

@@ -227,12 +227,14 @@ final class AppModel {
 
     func switchRole(to role: AppRole) {
         guard settings.role != role else { return }
+        studio.glance.configure(connectionID: nil, supported: false, available: false)
         connections.deactivate()
         source.deactivate()
         activate(role)
     }
 
     func resetOnboarding() {
+        studio.glance.configure(connectionID: nil, supported: false, available: false)
         connections.deactivate()
         source.deactivate()
         studio.transcription.suspend()
@@ -322,6 +324,8 @@ final class AppModel {
     }
 
     func prepareForTermination() {
+        source.glance.reset()
+        studio.glance.configure(connectionID: nil, supported: false, available: false)
         studio.chat.stop()
         ClaudeCodeSessionPool.shared.removeAll()
         CodexSessionPool.shared.removeAll()

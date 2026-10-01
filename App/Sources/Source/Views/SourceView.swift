@@ -20,6 +20,7 @@ struct SourceView: View {
                     }
                     ViewersCard()
                     SendCard()
+                    GlanceSourceCard()
                     if model.settings.showRepliesOnSource, let reply = model.source.lastReply {
                         ReplyCard(reply: reply)
                     }

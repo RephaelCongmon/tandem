@@ -25,6 +25,7 @@ enum SnapshotRequestError: Error, LocalizedError {
 @MainActor
 @Observable
 final class StudioEngine {
+    let glance = GlanceInjectController()
     enum LiveState: Equatable {
         case noSource
         case connecting
@@ -103,6 +104,11 @@ final class StudioEngine {
         transcription = TranscriptionService(settings: settings, modelMirror: speechModelMirror)
         sharedMacUpdater = SharedMacUpdater(settings: settings)
         chat.studio = self
+        glance.send = { [weak self] command in
+            guard let self, self.settings.role == .studio, let connection = self.connection,
+                  connection.isConnected, !connection.isClosing, connection.peerSupportsGlanceInject else { return }
+            connection.send(.control(.glanceCommand(command)))
+        }
         chat.transcription = transcription
         renderer.onStats = { [weak self] stats in self?.liveStats = stats }
         renderer.onFirstFrame = { [weak self] in self?.hasVideo = true }
@@ -173,6 +179,7 @@ final class StudioEngine {
 
     func detach(_ connection: PeerConnection) {
         guard self.connection?.id == connection.id else { return }
+        glance.configure(connectionID: nil, supported: false, available: false)
         setRegionTool(false)
         sharedMacUpdater.sourceDisconnected(connection)
         connection.videoSink.value = nil
@@ -204,6 +211,7 @@ final class StudioEngine {
                 setRegionTool(false)
             }
             sourceStatus = status
+            refreshGlanceConnection()
             if status.state != .live, status.state != .starting {
                 hasVideo = false
                 renderer.reset()
@@ -215,7 +223,11 @@ final class StudioEngine {
         case .audioStatus(let status):
             sourceAudioStatus = status
         case .hello(let hello):
+            refreshGlanceConnection()
             if let connection { sharedMacUpdater.sourceConnected(connection, hello: hello) }
+        case .glanceStatus(let status):
+            guard settings.role == .studio, connection?.isConnected == true, connection?.isClosing == false else { return }
+            glance.receive(status)
         case .updateReply, .updateStatus:
             sharedMacUpdater.handle(message)
         case .snapshotUnchanged(let id):
@@ -244,6 +256,11 @@ final class StudioEngine {
             chat.addToComposer(snapshot, sourceName: sourceName)
             if let note, !note.isEmpty, chat.composerText.isEmpty { chat.composerText = note }
         }
+    }
+
+    private func refreshGlanceConnection() {
+        glance.configure(connectionID: connection?.id, supported: connection?.peerSupportsGlanceInject ?? false,
+                         available: canCapture && settings.role == .studio && connection?.isClosing == false)
     }
 
     // MARK: Listening

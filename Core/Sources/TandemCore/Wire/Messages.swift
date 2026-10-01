@@ -81,6 +81,7 @@ public struct PeerHello: Codable, Sendable, Hashable {
         /// as soon as its still is captured, and skips the preview when the Studio's
         /// frozen frame is current (`SnapshotRequest.displayedFrameNanos`).
         public static let regionTool = "regionTool"
+        public static let glanceInject = "glanceInject"
     }
 
     public var role: PeerRole
@@ -433,6 +434,8 @@ public enum ControlMessage: Codable, Sendable, Hashable {
     case selectSource(CaptureSourceID)
     case automationStatus(AutomationStatus)
     case replyMirror(ReplyMirror)
+    case glanceCommand(GlanceCommand)
+    case glanceStatus(GlanceStatus)
     case audioRequest(AudioRequest)
     case audioStatus(AudioStatus)
     case updateOffer(UpdateOffer)

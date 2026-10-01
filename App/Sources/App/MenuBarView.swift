@@ -131,6 +131,10 @@ private struct SourceMenuSection: View {
                 .disabled(source.viewers.isEmpty || !source.isActive)
             }
 
+            if source.glance.session.visible {
+                Button("Hide Glance Inject") { source.glance.hide() }
+                    .buttonStyle(TandemButtonStyle(.secondary, size: .small))
+            }
             if model.settings.showRepliesOnSource, let reply = source.lastReply {
                 VStack(alignment: .leading, spacing: 4) {
                     SectionLabel("Latest answer")

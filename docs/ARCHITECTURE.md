@@ -26,12 +26,21 @@
 | `Core/Sources/TandemCore/AI` | Provider-neutral types, SSE decoder, Anthropic Messages / OpenAI Responses / Chat Completions streaming clients, the Claude Code client (runs the local `claude` CLI), its session pool and locator, model catalog |
 | `Core/Sources/TandemCore/Conversation` | Thread/message models, cache-friendly `ContextBuilder`, `LiveTranscript`/`TranscriptExcerpt`, skills, `ThreadStore`, `SnapshotStore` |
 | `Core/Sources/TandemCore/Markdown` | Streaming-tolerant block parser |
+| `Core/Sources/TandemCore/Glance` | Glance Inject payloads, bounded placement and single-owner session state |
 | `Core/Sources/TandemUI` | Design system, `MarkdownView`, snapshot markup editor + renderer, global hotkeys + recorder |
 | `App/Sources` | SwiftUI app: `AppModel`, `ConnectionManager`, `SourceEngine`, `StudioEngine`, `ChatController`, views, settings, menu bar, panels |
 
 ## Deliberate picture selection
 
 Questions and skills consume only selected composer pictures. Excluding pictures keeps them for later. **Select region** turns on the region tool (`StudioEngine.setRegionTool`, `RegionToolOverlay`). When a drag starts on the live view, `LiveVideoRenderer.freeze()` stops feeding the display layer, which keeps showing that frame, and returns the frame's Source capture time. The Studio asks the Source to capture a native still of that moment. When the pointer lifts, the normalized region is requested as a crop right away, the live view resumes from one keyframe, and the crop lands in the composer tens of milliseconds later. The Source replies `snapshotUnchanged` if no newer live frame was captured, or a preview that replaces the held frame mid-drag if the screen changed. That way the frame the user drags on matches the still that gets cropped, and an unchanged screen costs no preview bytes. Previews never enter the composer or AI context. Completion, discard, disconnect, pause, interruption, source changes and expiry release held stills. Legacy automatic-on-send preferences are ignored; explicit interval automation and Source pushes remain available.
+
+## Glance Inject
+
+The Studio's `GlanceInjectController` sends text immediately over the existing encrypted control link. Placement and scroll changes are coalesced at 30 Hz, with only the newest pending state sent. Revisions prevent stale acknowledgements from rewinding a drag; pending changes are cancelled on disconnect, and reconnect queries status without replaying text.
+
+`SourceEngine` gates commands on approval, connection state, active sharing, the injection setting and actual screen-lock state. `GlanceSession` validates payloads before mutation and records revisions per viewer; explicit content injection transfers ownership, while only the current owner can adjust or clear the panel. The owner disconnecting, pause, capture interruption, lock, role change and shutdown clear content.
+
+`GlanceOverlayController` owns a non-key, nonactivating, click-through AppKit panel and native vertical scroll view. `GlanceMarkdownView` uses the existing parser with wrapped code and vertically stacked table columns so every part remains reachable without local interaction. Placement is normalized within a display's remaining usable space; invalid or removed displays fall back to an available screen. Status reports actual scroll bounds, geometry, ownership and policy without echoing text.
 
 ## Threading model
 

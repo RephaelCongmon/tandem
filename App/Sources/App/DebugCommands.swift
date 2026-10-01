@@ -174,6 +174,11 @@ enum DebugCommands {
             }
         case "dump":
             dump(model: model)
+        case "glance":
+            model.studio.glance.draft = argument
+            model.studio.glance.inject(argument)
+        case "glancePanel":
+            model.studio.glance.isPresented = true
         case "snap":
             snapshotWindows(name: argument.isEmpty ? "window" : argument)
         case "quit":
@@ -217,6 +222,9 @@ enum DebugCommands {
         let studio = model.studio
         let source = model.source
         var lines: [String] = []
+        let overlay = source.glance.status(for: source.glance.session.owner ?? UUID())
+        lines.append("glance.source.visible=\(overlay.visible) contentBytes=\(source.glance.session.content?.text.utf8.count ?? 0) frame=\(String(describing: source.glance.panel?.frame)) scroll=\(overlay.scrollFraction) maximum=\(overlay.maxScrollPoints)")
+        lines.append("glance.studio.canInject=\(studio.glance.canInject) canManage=\(studio.glance.canManage) layout=\(studio.glance.layout) scroll=\(studio.glance.scrollFraction) error=\(studio.glance.error ?? "-")")
         lines.append("role=\(model.settings.role?.rawValue ?? "nil")")
         lines.append("connections=\(model.connections.connections.map { "\($0.peer?.name ?? "?"):\($0.phase):\($0.linkKind.rawValue):rtt=\($0.stats.rttMillis ?? -1)" })")
         lines.append("studio.isConnected=\(studio.isConnected) liveState=\(studio.liveState) hasVideo=\(studio.hasVideo) stageVisible=\(studio.isStageVisible) preview=\(studio.livePreviewEnabled)")

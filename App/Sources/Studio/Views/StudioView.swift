@@ -43,6 +43,8 @@ struct StudioView: View {
         ToolbarItemGroup(placement: .primaryAction) {
             UpdateToolbarButton()
 
+            GlanceInjectToolbarButton()
+
             Button {
                 model.settings.showStage.toggle()
                 if !model.settings.showStage { focusStage = false }
