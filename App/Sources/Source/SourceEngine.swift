@@ -49,7 +49,7 @@ final class SourceEngine {
     private(set) var viewers: [Viewer] = []
     private(set) var captureState: CaptureState = .idle
     private(set) var catalog: [CaptureSourceDescriptor] = []
-    private(set) var current: CaptureSourceDescriptor?
+    private(set) var current: CaptureSourceDescriptor? { didSet { if oldValue != current { glance.placementChanged() } } }
     private(set) var isSharingEnabled = true
     /// Why sharing was paused automatically (e.g. the shared window closed).
     private(set) var pauseReason: String?
@@ -59,6 +59,8 @@ final class SourceEngine {
     @ObservationIgnored var onNeedsDecision: (() -> Void)?
     private(set) var isLockPaused = false
     private(set) var lastReply: ReplyMirror?
+    /// Text from the Studio in an overlay on this screen.
+    let glance: GlanceOverlayController
     private(set) var lastPush: PushFeedback?
     private(set) var streamStats = VideoFanout.Stats()
     private(set) var hasScreenPermission = CaptureService.hasScreenRecordingPermission
@@ -119,6 +121,7 @@ final class SourceEngine {
 
     init(settings: SettingsStore) {
         self.settings = settings
+        glance = GlanceOverlayController(settings: settings)
         previewLayer.videoGravity = .resizeAspect
         previewLayer.backgroundColor = NSColor.black.cgColor
 
@@ -145,16 +148,25 @@ final class SourceEngine {
             onMain { self?.audioInterrupted(error) }
         }
         observeLockState()
+        glance.placement = { [weak self] in GlanceOverlayController.screen(for: self?.current) }
+        glance.onWindowCreated = { [weak self] windowID in
+            guard let self else { return }
+            self.capture.alwaysExcludedWindowIDs.value.insert(windowID)
+            // Own windows are being shared: rebuild the filter so the overlay stays out.
+            if !self.settings.excludeTandemWindows { self.captureSettingsChanged() }
+        }
     }
 
     // MARK: Lifecycle
 
     func activate() {
+        glance.prepare()
         refreshPermission()
         Task { await refreshCatalog() }
     }
 
     func deactivate() {
+        glance.teardown()
         invalidateFrozenSnapshots()
         for viewer in viewers { fanout.removeViewer(id: viewer.id) }
         viewers.removeAll()
@@ -235,6 +247,7 @@ final class SourceEngine {
     func detach(_ connection: PeerConnection) {
         guard viewers.contains(where: { $0.id == connection.id }) else { return }
         updateReceiver.connectionClosed(connection)
+        glance.connectionClosed(connection.id)
         connection.ackSink.value = nil
         connection.onControl = nil
         fanout.removeViewer(id: connection.id)
@@ -253,6 +266,7 @@ final class SourceEngine {
             viewers[index].approved = true
             sendStatus(to: viewers[index].connection)
             sendCatalog(to: viewers[index].connection)
+            glance.viewerApproved(viewers[index].connection)
             reconcile()
         } else {
             if let peerID = viewers[index].connection.peer?.id { onDenySessions?(peerID) }
@@ -296,6 +310,12 @@ final class SourceEngine {
             updateReceiver.handle(offer, from: connection)
         case .replyMirror(let reply):
             if settings.showRepliesOnSource, viewers[index].approved { lastReply = reply }
+        case .glanceContent(let content):
+            guard viewers[index].approved else { return }
+            glance.receive(content, from: connection)
+        case .glanceLayout(let layout):
+            guard viewers[index].approved else { return }
+            glance.receive(layout, from: connection)
         default:
             break
         }

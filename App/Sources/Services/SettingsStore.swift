@@ -184,6 +184,8 @@ final class SettingsStore {
     var acceptPeerUpdates: Bool = true { didSet { store(acceptPeerUpdates, "source.acceptPeerUpdates") } }
     /// Let a paired Studio hear this Mac's computer audio (for its live transcript).
     var shareAudio: Bool = true { didSet { store(shareAudio, "source.shareAudio") } }
+    /// Let a paired Studio show text on this screen (Glance).
+    var allowGlance: Bool = true { didSet { store(allowGlance, "source.allowGlance") } }
 
     // MARK: Studio / AI
     var provider: AIProviderKind = .claudeCode { didSet { store(provider, "ai.provider") } }
@@ -211,6 +213,18 @@ final class SettingsStore {
     var showStage: Bool = true { didSet { store(showStage, "studio.showStage") } }
     /// One-click skill buttons above the message field.
     var skills: [PromptSkill] = PromptSkill.defaults { didSet { store(skills, "studio.skills") } }
+
+    // MARK: Glance (Studio)
+    /// Where the Glance sits on the shared Mac's screen, as fractions of it.
+    var glanceFrame: GlanceFrame = .standard { didSet { store(glanceFrame, "glance.frame") } }
+    var glanceOpacity: Double = GlanceLayout.defaultOpacity { didSet { store(glanceOpacity, "glance.opacity") } }
+    var glanceTextScale: Double = 1 { didSet { store(glanceTextScale, "glance.textScale") } }
+    /// Show each new AI answer in the Glance as it's written.
+    var glanceFollowAnswers: Bool = false { didSet { store(glanceFollowAnswers, "glance.followAnswers") } }
+    /// Send the Glance text field as it's typed.
+    var glanceLiveTyping: Bool = false { didSet { store(glanceLiveTyping, "glance.liveTyping") } }
+    /// What the Glance shows, so it's still in step with the shared Mac after Tandem restarts.
+    var glanceDocument: SavedGlance? = nil { didSet { store(glanceDocument, "glance.document") } }
 
     // MARK: Listening
     /// Transcribe the shared Mac's computer audio.
@@ -278,6 +292,13 @@ final class SettingsStore {
         snapshotResolution = load("source.snapshotResolution", .high)
         snapshotQuality = load("source.snapshotQuality", 0.9)
         shareAudio = load("source.shareAudio", true)
+        glanceFrame = load("glance.frame", .standard)
+        glanceOpacity = load("glance.opacity", GlanceLayout.defaultOpacity)
+        glanceTextScale = load("glance.textScale", 1)
+        glanceFollowAnswers = load("glance.followAnswers", false)
+        glanceLiveTyping = load("glance.liveTyping", false)
+        glanceDocument = load("glance.document", nil)
+        allowGlance = load("source.allowGlance", true)
         acceptPeerUpdates = load("source.acceptPeerUpdates", true)
         updateSharedMac = load("updates.sharedMac", true)
         provider = load("ai.provider", .claudeCode)

@@ -131,6 +131,17 @@ private struct SourceMenuSection: View {
                 .disabled(source.viewers.isEmpty || !source.isActive)
             }
 
+            if source.glance.hasGlance {
+                Button {
+                    source.glance.toggleHiddenHere()
+                } label: {
+                    Label(source.glance.isHiddenHere ? "Show Glance" : "Hide Glance", systemImage: source.glance.isHiddenHere ? "eye" : "eye.slash")
+                        .frame(maxWidth: .infinity)
+                }
+                .buttonStyle(TandemButtonStyle(.secondary, size: .small))
+                .help("Text \(source.glance.senderName ?? "the Studio") put on this screen\(model.settings.combo(for: .toggleGlance).map { " (\($0.displayString))" } ?? "")")
+            }
+
             if model.settings.showRepliesOnSource, let reply = source.lastReply {
                 VStack(alignment: .leading, spacing: 4) {
                     SectionLabel("Latest answer")

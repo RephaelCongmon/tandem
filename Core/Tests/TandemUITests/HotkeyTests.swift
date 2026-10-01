@@ -263,11 +263,14 @@ final class HotkeyTests: XCTestCase {
         XCTAssertEqual(HotkeyAction.toggleAutoCapture.defaultCombo.displayString, "⌃⌥A")
         XCTAssertEqual(HotkeyAction.pauseSharing.defaultCombo.displayString, "⌃⌥P")
         XCTAssertEqual(HotkeyAction.showTandem.defaultCombo.displayString, "⌃⌥T")
+        XCTAssertEqual(HotkeyAction.toggleGlance.defaultCombo.displayString, "⌃⌥G")
+        XCTAssertEqual(HotkeyAction.glanceScrollUp.defaultCombo.displayString, "⌃⌥↑")
+        XCTAssertEqual(HotkeyAction.glanceScrollDown.defaultCombo.displayString, "⌃⌥↓")
     }
 
     func testHotkeyActionRoles() {
-        XCTAssertEqual(HotkeyAction.actions(for: .source), [.sendSnapshot, .sendSnapshotWithNote, .pauseSharing, .showTandem])
-        XCTAssertEqual(HotkeyAction.actions(for: .studio), [.captureAndAsk, .captureToComposer, .toggleAutoCapture, .answerFollowUp, .toggleListening, .showTandem])
+        XCTAssertEqual(HotkeyAction.actions(for: .source), [.sendSnapshot, .sendSnapshotWithNote, .pauseSharing, .showTandem, .toggleGlance])
+        XCTAssertEqual(HotkeyAction.actions(for: .studio), [.captureAndAsk, .captureToComposer, .toggleAutoCapture, .answerFollowUp, .toggleListening, .showTandem, .toggleGlance, .glanceScrollUp, .glanceScrollDown])
         XCTAssertEqual(HotkeyAction.actions(for: .both), HotkeyAction.allCases)
         XCTAssertEqual(HotkeyAction.showTandem.role, .both)
     }

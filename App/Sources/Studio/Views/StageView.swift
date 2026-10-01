@@ -17,6 +17,13 @@ struct StageView: View {
                 .opacity(model.studio.liveState == .live ? 1 : 0)
                 .animation(.easeOut(duration: 0.25), value: model.studio.liveState == .live)
             overlayContent
+            if model.studio.isConnected {
+                if model.studio.glance.isToolOn {
+                    GlanceStageOverlay()
+                } else if !model.studio.isRegionToolOn {
+                    GlanceStageOutline()
+                }
+            }
             if model.studio.isRegionToolOn {
                 RegionToolOverlay()
             }
@@ -43,7 +50,11 @@ struct StageView: View {
             }
         }
         .overlay(alignment: .bottom) {
-            if showsChrome {
+            if model.studio.glance.isToolOn, model.studio.isConnected {
+                GlanceControlBar()
+                    .padding(.horizontal, Spacing.m)
+                    .padding(.bottom, Spacing.m)
+            } else if showsChrome {
                 StageToolbar()
                     .padding(.bottom, Spacing.l)
                     .opacity(chromeVisible || model.studio.liveState != .live ? 1 : 0)
@@ -66,7 +77,7 @@ struct StageView: View {
             }
         }
         .onTapGesture(count: 2) {
-            guard !model.studio.isRegionToolOn else { return }
+            guard !model.studio.isRegionToolOn, !model.studio.glance.isToolOn else { return }
             withAnimation(.spring(response: 0.35)) { focus.toggle() }
         }
         .clipped()
@@ -201,6 +212,14 @@ private struct StageToolbar: View {
             .buttonStyle(TandemButtonStyle(.secondary, size: .regular))
             .disabled(!studio.canCapture)
             .help("Drag on the live view to add pictures of the shared screen (⇧⌘S)")
+
+            Button { studio.toggleGlanceTool() } label: {
+                Label("Glance", systemImage: "rectangle.inset.topright.filled")
+                    .font(.system(size: 12.5, weight: .semibold))
+            }
+            .buttonStyle(TandemButtonStyle(studio.glance.isShowingOnSource ? .primary : .secondary, size: .regular))
+            .disabled(!studio.isConnected)
+            .help("Show text or an answer on \(studio.sourceName ?? "the shared Mac")'s screen, and move and scroll it from here (⇧⌘G)")
 
             Hairline(vertical: true).frame(height: 18).padding(.horizontal, 4)
 

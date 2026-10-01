@@ -14,6 +14,7 @@ It's built for moments like: your work laptop can't run AI tools but your person
 - **Hears the meeting, too.** Turn on **Listen** and the Source's computer audio streams to the Studio (Opus, about 30 kbps) and is transcribed on-device as it's spoken, about a second behind, by NVIDIA's **Parakeet** model on the Neural Engine (about a quarter fewer mistakes than Apple's recognizer on conversation). **Follow-up** finds the question just asked out loud, or on screen, and answers it in a few plain sentences. The transcript also goes with every other question, so the AI knows what's being discussed.
 - **Remembers the conversation.** With Claude Code, each thread keeps a live session, so a follow-up sends only what's new and starts answering sooner. Earlier questions, answers, screenshots and transcripts stay in context.
 - **Answers on both Macs.** Replies can be mirrored back to the Source's window and menu bar.
+- **Glance on the shared Mac.** Put a note, pasted text or an AI answer in a see-through overlay on the shared Mac's screen (the passive overlay from Glance: clicks pass through it, it never takes focus, and it's never in what that Mac shares). The asking Mac moves, resizes and scrolls it in real time, from a stand-in drawn on the live view: a 3–4 ms median round trip on one Mac, plus your link's round-trip time between two.
 - **Private by design.** Pairing is confirmed with a 6-digit code; every session is end-to-end encrypted and mutually authenticated. Screenshots go only to the AI provider you choose, on your own subscription or key, and stay in memory unless you opt to keep them.
 
 ## Requirements
@@ -45,11 +46,13 @@ It's built for moments like: your work laptop can't run AI tools but your person
 - **Listen** (in the composer, or ⌥⌘L) transcribes the shared Mac's computer audio. See [Listening](#listening-to-the-shared-macs-audio).
 - The toolbar model menu switches provider, model and reasoning effort. The **Reasoning** chip under the message field changes the reasoning level (Fast, Balanced, Thorough, Deep, Maximum) from your next question on, offering only the levels the current model supports.
 - The **Source** menu on the live view lets you choose which display, window or camera the other Mac shares (if it allows that).
+- **Glance** (on the live view's toolbar, or ⇧⌘G) puts text on the shared Mac's screen. Type or paste into its field and click **Show** (⌘↩), or turn on **Live typing** to send each keystroke. **Latest Answer** shows the newest AI answer (streaming if it's still being written); **Follow answers** does that for every new answer; the **Glance** button under any answer shows that one. On the live view, a stand-in sits exactly where the overlay is on the shared Mac and wraps text the same way: drag it to move the overlay, drag its corner to resize it, and scroll over it (trackpad or wheel) to scroll the text. The bar also scrolls by line or page, snaps to corners and sizes, changes text size and backdrop opacity, and hides or clears it. ⌃⌥↑ / ⌃⌥↓ scroll it from any app, ⌃⌥G hides or shows it. When a window or camera is shared, the stand-in is drawn on a map of the shared Mac's screen. Both Macs need the version with Glance.
 
 **On the Source (shared) Mac**
 - The window shows exactly what's being shared, who's watching, and over which link.
 - **Send Snapshot** (⌃⌥S from any app) pushes a screenshot; **Send with Note…** (⌃⌥N) opens a small panel to add context first. The answer appears on the Studio and, optionally, on this Mac too.
 - **Pause** (⌃⌥P) stops all capture instantly. Sharing also pauses automatically while the Mac is locked.
+- A **Glance** from the Studio appears in a see-through panel on the shared display (or the screen with the shared window). Clicks pass through it and it never takes focus. It's left out of everything this Mac shares, so the Studio's live view and the AI's pictures never include it. **⌃⌥G** (or the menu bar, or the Glance card in the window) hides it until you show it again; Settings › Sharing › *Let the other Mac show text on this screen* turns Glance off.
 
 ### Listening to the shared Mac's audio
 
@@ -92,6 +95,8 @@ Releases are public at [github.com/RephaelCongmon/tandem/releases](https://githu
 | Studio | ⌃⌥A | Toggle auto-capture |
 | Studio | ⌃⌥F | Answer the follow-up (runs the Follow-up skill) |
 | Studio | ⌃⌥L | Listen to the shared Mac's audio (on/off) |
+| Studio | ⌃⌥↑ / ⌃⌥↓ | Scroll the Glance on the shared Mac |
+| Both | ⌃⌥G | Hide or show the Glance (on the Source, only on that screen) |
 | Both | ⌃⌥T | Show Tandem |
 
 ### Connections
@@ -157,7 +162,16 @@ swift scripts/debug-command.swift B transcript                   # log the live 
 swift scripts/debug-command.swift B lastAnswer                   # log the last question, its transcript and the answer
 swift scripts/debug-command.swift A drop                         # cut every link without a goodbye, like sleep
 swift scripts/debug-command.swift B localNetwork denied          # show the blocked-network state (allowed ends it)
+swift scripts/debug-command.swift B glance '# Notes\n\n1. First'   # show a note in the Source's Glance (\n = new line)
+swift scripts/debug-command.swift B glanceType 'typed live'      # type into the Glance field with live typing
+swift scripts/debug-command.swift B glanceFollow on              # stream every new answer into the Glance
+swift scripts/debug-command.swift B glanceScroll pageDown        # top|bottom|up|down|pageUp|pageDown|<points>
+swift scripts/debug-command.swift B glancePlace bottomLeft       # also glanceFrame x y w h, glanceScale, glanceOpacity, glanceVisible off
+swift scripts/debug-command.swift B glanceBench 240              # 240 scroll steps at 60 Hz, then logs round-trip min/p50/p95/max
+swift scripts/debug-command.swift A glanceHide                   # what ⌃⌥G does on the Source
 ```
+
+`swift scripts/glance-capture-check.swift` (run from Terminal, which has Screen Recording permission) puts a panel configured like the Glance overlay on screen and reports whether ScreenCaptureKit captures it with each filter Tandem uses.
 
 Development builds usually show the local-network banner: macOS doesn't recognize each new build, though the two instances still reach each other on the same Mac.
 

@@ -85,6 +85,8 @@ final class PeerConnection: Identifiable {
     var peerSupportsRegionSnapshots: Bool { remoteHello?.capabilities.contains(PeerHello.Capability.regionSnapshots) ?? false }
     /// The other Mac serves the region tool (crops while its still is captured, no preview when current).
     var peerSupportsRegionTool: Bool { remoteHello?.capabilities.contains(PeerHello.Capability.regionTool) ?? false }
+    /// The other Mac shows Glance overlays.
+    var peerSupportsGlance: Bool { remoteHello?.capabilities.contains(PeerHello.Capability.glance) ?? false }
 
     /// The other Mac installs updates this Mac sends it.
     var peerAcceptsUpdates: Bool { remoteHello?.capabilities.contains(PeerHello.Capability.peerUpdate) ?? false }

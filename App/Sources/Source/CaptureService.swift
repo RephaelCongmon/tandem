@@ -43,6 +43,8 @@ final class CaptureService: NSObject, @unchecked Sendable {
     var onFrame: ((CMSampleBuffer, CVPixelBuffer, UInt64) -> Void)?
     /// The stream stopped on its own (window closed, display unplugged, permission revoked).
     var onInterrupted: ((Error?) -> Void)?
+    /// Windows never captured, even when Tandem's own windows are shared (the Glance overlay).
+    let alwaysExcludedWindowIDs = Locked<Set<CGWindowID>>([])
 
     private let lock = NSLock()
     private var stream: SCStream?
@@ -289,7 +291,14 @@ final class CaptureService: NSObject, @unchecked Sendable {
                 throw CaptureError.sourceUnavailable
             }
             let own = excludeOwnApp ? content.applications.filter { $0.bundleIdentifier == Bundle.main.bundleIdentifier } : []
-            let filter = SCContentFilter(display: display, excludingApplications: own, exceptingWindows: [])
+            let privateWindows = alwaysExcludedWindowIDs.value
+            let filter: SCContentFilter
+            if own.isEmpty, !privateWindows.isEmpty {
+                // Tandem's windows are shared on purpose, except the Glance overlay: it's for this Mac's eyes only.
+                filter = SCContentFilter(display: display, excludingWindows: content.windows.filter { privateWindows.contains($0.windowID) })
+            } else {
+                filter = SCContentFilter(display: display, excludingApplications: own, exceptingWindows: [])
+            }
             let screen = NSScreen.screens.first { ($0.deviceDescription[NSDeviceDescriptionKey("NSScreenNumber")] as? NSNumber)?.uint32Value == display.displayID }
             let (w, h) = Self.targetSize(for: filter, maxDimension: 0)
             let descriptor = CaptureSourceDescriptor(

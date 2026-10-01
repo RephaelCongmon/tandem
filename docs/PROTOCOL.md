@@ -75,13 +75,16 @@ Audio is mono 16 kHz. Opus frames are 20 ms (32 kbps), and a packet carries five
 - `sourceCatalogRequest`, `sourceCatalog`, `selectSource`
 - `automationStatus`
 - `replyMirror`
+- `glanceContent {documentID, revision, text, appendingToUTF8Count?, title?, origin, isStreaming}` (Studio → Source): the Glance's text. A new `documentID` replaces what's shown; with `appendingToUTF8Count` the text is only the part to append, and applies only if the Source holds exactly that many UTF-8 bytes of the document (otherwise it reports `needsFullText` and the Studio resends the whole text). Older revisions of the same document are ignored. Text is capped at 256 KB.
+- `glanceLayout {sequence, isVisible, frame {x, y, width, height}, scrollOffset, animated, backgroundOpacity, textScale, sentAtNanos?}` (Studio → Source): where the overlay sits (fractions of the Source's screen, top-left origin), its scroll offset in the Source's points, and its look. Sent at most 60 times a second; the newest wins (`sequence` counts per connection). `animated` eases into the state (buttons, keys) instead of jumping (drags, trackpad).
+- `glanceStatus {state, documentID, revision, needsFullText, layoutSequence, frame, scrollOffset, contentHeight, viewportHeight, screen {width, height, visibleFrame, isSharedDisplay}}` (Source → Studio): `showing`, `hidden`, `hiddenOnSource` (its user hid it) or `notAllowed`; what was applied after keeping the overlay on the usable screen; and the measured heights the Studio clamps scrolling against. Sent once per run-loop turn after Glance messages, and when the measurements change. `layoutSequence` gives the Studio its round-trip time.
 - `audioRequest {enabled, codecs}` (Studio → Source): start or stop sending computer audio; `codecs` lists what the Studio can decode, best first
 - `audioStatus {state, message, codec, sampleRate}` (Source → Studio): `off`, `starting`, `live`, `paused`, `needsPermission`, `notAllowed` or `error`
 - `updateOffer {id, version, build, byteCount, sha256}` (Studio → Source): a newer Tandem, as a zip of the signed app; `updateReply {id, accepted, reason}`; then `updateChunk`s; `updateStatus {id, phase, fraction, message}` (Source → Studio): `receiving`, `verifying`, `installing`, `restarting` or `failed`
 - `ping`/`pong` (NTP-style clock offset)
 - `goodbye`
 
-Unknown messages are ignored, so newer peers can add them. `hello.capabilities` advertises optional features: `"audio"` means the peer can send (Source) or transcribe (Studio) computer audio; `"update"` means a Source installs updates its Studio sends (after checking the version and the developer signature). A Studio uses it to tell the user that an older Source needs an update.
+Unknown messages are ignored, so newer peers can add them. `hello.capabilities` advertises optional features: `"audio"` means the peer can send (Source) or transcribe (Studio) computer audio; `"update"` means a Source installs updates its Studio sends (after checking the version and the developer signature); `"glance"` means a Source shows Glance overlays. A Studio uses these to tell the user that an older Source needs an update.
 
 ### Frozen region snapshots
 

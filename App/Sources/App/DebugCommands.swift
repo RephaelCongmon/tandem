@@ -172,6 +172,74 @@ enum DebugCommands {
                     logger.notice("TANDEM-ANSWER \(message.role.rawValue, privacy: .public) skill=\(message.skill?.title ?? "-", privacy: .public) first=\(message.firstTokenSeconds ?? -1, privacy: .public) total=\(message.totalSeconds ?? -1, privacy: .public) \(flat(transcript), privacy: .public) || \(flat(message.text), privacy: .public)")
                 }
             }
+        case "glance":
+            // glance <text>: show a note (\n for new lines).
+            model.studio.glance.show(argument.replacingOccurrences(of: "\\n", with: "\n"), title: nil, origin: .note)
+        case "glanceType":
+            // glanceType <text>: types it into the Glance field with live typing, ~25 keys a second.
+            let glance = model.studio.glance
+            glance.liveTyping = true
+            glance.draft = ""
+            Task { @MainActor in
+                for character in argument.replacingOccurrences(of: "\\n", with: "\n") {
+                    glance.draft.append(character)
+                    try? await Task.sleep(nanoseconds: 40_000_000)
+                }
+            }
+        case "glanceAnswer":
+            model.studio.glance.showLatestAnswer()
+        case "glanceFollow":
+            model.studio.glance.followAnswers = argument != "off"
+        case "glanceTool":
+            if argument.isEmpty || (argument == "on") != model.studio.glance.isToolOn { model.studio.toggleGlanceTool() }
+        case "glanceScroll":
+            // glanceScroll top|bottom|up|down|pageUp|pageDown|<points>
+            let glance = model.studio.glance
+            switch argument {
+            case "top": glance.scroll(.top)
+            case "bottom": glance.scroll(.bottom)
+            case "up": glance.scroll(.lineUp)
+            case "down": glance.scroll(.lineDown)
+            case "pageUp": glance.scroll(.pageUp)
+            case "pageDown": glance.scroll(.pageDown)
+            default: if let points = Double(argument) { glance.setScrollOffset(points, animated: false) }
+            }
+        case "glanceFrame":
+            // glanceFrame x y width height (fractions of the Source's screen)
+            let values = argument.split(separator: " ").compactMap { Double($0) }
+            if values.count == 4 { model.studio.glance.setFrame(GlanceFrame(x: values[0], y: values[1], width: values[2], height: values[3]), animated: false) }
+        case "glancePlace":
+            if let placement = GlancePlacement(rawValue: argument) { model.studio.glance.place(placement) }
+        case "glanceVisible":
+            model.studio.glance.setVisible(argument != "off")
+        case "glanceOpacity":
+            if let value = Double(argument) { model.studio.glance.setOpacity(value) }
+        case "glanceScale":
+            if let value = Double(argument) { model.studio.glance.setTextScale(value) }
+        case "glanceClear":
+            model.studio.glance.clear()
+        case "glanceBench":
+            // glanceBench N: N trackpad-like scroll steps at 60 Hz, then the round-trip spread.
+            let glance = model.studio.glance
+            let steps = max(1, Int(argument) ?? 120)
+            let before = glance.roundTripSamples.count
+            Task { @MainActor in
+                for index in 0..<steps {
+                    glance.scroll(by: index % 60 < 30 ? 6 : -6)
+                    try? await Task.sleep(nanoseconds: 16_666_667)
+                }
+                try? await Task.sleep(nanoseconds: 500_000_000)
+                let samples = Array(glance.roundTripSamples.dropFirst(before)).sorted()
+                let pick = { (q: Double) in samples.isEmpty ? -1 : samples[min(samples.count - 1, Int(Double(samples.count - 1) * q))] }
+                Logger(subsystem: "com.rofel.tandem", category: "Debug").notice("TANDEM-GLANCE bench steps=\(steps, privacy: .public) acked=\(samples.count, privacy: .public) rtt min=\(pick(0), format: .fixed(precision: 1), privacy: .public) p50=\(pick(0.5), format: .fixed(precision: 1), privacy: .public) p95=\(pick(0.95), format: .fixed(precision: 1), privacy: .public) max=\(pick(1), format: .fixed(precision: 1), privacy: .public) ms")
+            }
+        case "glanceHide":
+            // On the Source: what ⌃⌥G does there.
+            model.source.glance.toggleHiddenHere()
+        case "glanceAllow":
+            // On the Source: Settings › Sharing › Let the other Mac show text on this screen.
+            model.settings.allowGlance = argument != "off"
+            model.source.glance.allowedChanged()
         case "dump":
             dump(model: model)
         case "snap":
@@ -230,6 +298,8 @@ enum DebugCommands {
         lines.append("chat.pictures=\(model.chat.composerAttachments.map { "\($0.id):\($0.attachment.pixelWidth)x\($0.attachment.pixelHeight):\($0.attachment.capturedAt.timeIntervalSince1970)" }) use=\(model.chat.useSelectedPictures)")
         lines.append("studio.regionTool=\(studio.isRegionToolOn) drag=\(studio.regionDrag.map { "\($0.id):\(Int($0.frameSize.width))x\(Int($0.frameSize.height)):preview=\($0.preview != nil)" } ?? "-") cropsInFlight=\(studio.regionCropsInFlight) capturing=\(studio.isCapturing)")
         lines.append("auto=\(model.settings.autoCaptureEnabled) last=\(studio.lastAutoResult ?? "-")")
+        lines.append("studio.glance=\(studio.glance.debugDescription)")
+        lines.append("source.glance=window=\(source.glance.windowNumber) onScreen=\(source.glance.isOnScreen) hiddenHere=\(source.glance.isHiddenHere) from=\(source.glance.senderName ?? "-") rev=\(source.glance.document.revision) chars=\(source.glance.document.text.count) streaming=\(source.glance.document.isStreaming) layout=\(source.glance.layout) status=\(source.glance.status(for: nil))")
         lines.append("network.blocked=\(model.connections.localNetworkBlocked) failure=\(model.connections.lastFailure?.message ?? "-")")
         // Logged (not written to the container) so tools can read it without
         // triggering the "access data from other apps" privacy prompt.

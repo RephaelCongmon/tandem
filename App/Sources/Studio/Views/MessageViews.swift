@@ -191,6 +191,13 @@ private struct AssistantMessageView: View {
             }
             .disabled(message.text.isEmpty)
             Button {
+                model.studio.glance.showAnswer(message)
+            } label: {
+                Label("Glance", systemImage: "rectangle.inset.topright.filled")
+            }
+            .disabled(message.text.isEmpty || !model.studio.isConnected)
+            .help("Show this answer on \(model.studio.sourceName ?? "the shared Mac")'s screen (Glance)")
+            Button {
                 model.chat.retry(message.id)
             } label: {
                 Label("Retry", systemImage: "arrow.clockwise")

@@ -578,6 +578,8 @@ final class ChatController {
             pendingReasoning = ""
         }
         mirrorIfNeeded(reply, isFinal: false)
+        // A flush queued just before the answer finished runs after `finish`; it's not news.
+        if streaming === reply { studio?.glance.answerUpdated(reply, isFinal: false) }
     }
 
     private func finish(_ reply: StreamingReply, status: ChatMessage.Status, usage: AIUsage?, servedModel: String?) {
@@ -594,6 +596,7 @@ final class ChatController {
             thread.messages[index].totalSeconds = now.timeIntervalSince(reply.startedAt)
         }
         mirrorIfNeeded(reply, isFinal: true)
+        studio?.glance.answerUpdated(reply, isFinal: true)
         if streaming === reply { streaming = nil }
         streamTask = nil
         pendingText = ""

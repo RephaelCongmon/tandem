@@ -203,6 +203,12 @@ public extension KeyCombo {
     static let toggleListening = KeyCombo(keyCode: UInt32(kVK_ANSI_L), modifiers: UInt32(controlKey | optionKey))
     /// ⌃⌥T
     static let showTandem = KeyCombo(keyCode: UInt32(kVK_ANSI_T), modifiers: UInt32(controlKey | optionKey))
+    /// ⌃⌥G
+    static let toggleGlance = KeyCombo(keyCode: UInt32(kVK_ANSI_G), modifiers: UInt32(controlKey | optionKey))
+    /// ⌃⌥↑
+    static let glanceScrollUp = KeyCombo(keyCode: UInt32(kVK_UpArrow), modifiers: UInt32(controlKey | optionKey))
+    /// ⌃⌥↓
+    static let glanceScrollDown = KeyCombo(keyCode: UInt32(kVK_DownArrow), modifiers: UInt32(controlKey | optionKey))
 }
 
 // MARK: - Codable
@@ -482,6 +488,9 @@ public enum HotkeyAction: String, CaseIterable, Codable, Sendable, Identifiable 
     case answerFollowUp
     case toggleListening
     case showTandem
+    case toggleGlance
+    case glanceScrollUp
+    case glanceScrollDown
 
     /// Which side of a Tandem session an action applies to.
     public enum Role: String, Codable, Sendable, CaseIterable {
@@ -513,6 +522,9 @@ public enum HotkeyAction: String, CaseIterable, Codable, Sendable, Identifiable 
         case .answerFollowUp: return "Answer the follow-up"
         case .toggleListening: return "Listen to the shared Mac"
         case .showTandem: return "Show Tandem"
+        case .toggleGlance: return "Show or hide Glance"
+        case .glanceScrollUp: return "Scroll Glance up"
+        case .glanceScrollDown: return "Scroll Glance down"
         }
     }
 
@@ -537,6 +549,12 @@ public enum HotkeyAction: String, CaseIterable, Codable, Sendable, Identifiable 
             return "Turns the live transcript of the shared Mac's audio on or off."
         case .showTandem:
             return "Brings the Tandem window to the front."
+        case .toggleGlance:
+            return "Hides or shows the Glance overlay of text from the studio on the shared Mac's screen."
+        case .glanceScrollUp:
+            return "Scrolls the Glance on the shared Mac up, without leaving the app you're in."
+        case .glanceScrollDown:
+            return "Scrolls the Glance on the shared Mac down, without leaving the app you're in."
         }
     }
 
@@ -552,6 +570,9 @@ public enum HotkeyAction: String, CaseIterable, Codable, Sendable, Identifiable 
         case .answerFollowUp: return .answerFollowUp
         case .toggleListening: return .toggleListening
         case .showTandem: return .showTandem
+        case .toggleGlance: return .toggleGlance
+        case .glanceScrollUp: return .glanceScrollUp
+        case .glanceScrollDown: return .glanceScrollDown
         }
     }
 
@@ -559,8 +580,8 @@ public enum HotkeyAction: String, CaseIterable, Codable, Sendable, Identifiable 
     public var role: Role {
         switch self {
         case .sendSnapshot, .sendSnapshotWithNote, .pauseSharing: return .source
-        case .captureAndAsk, .captureToComposer, .toggleAutoCapture, .answerFollowUp, .toggleListening: return .studio
-        case .showTandem: return .both
+        case .captureAndAsk, .captureToComposer, .toggleAutoCapture, .answerFollowUp, .toggleListening, .glanceScrollUp, .glanceScrollDown: return .studio
+        case .showTandem, .toggleGlance: return .both
         }
     }
 

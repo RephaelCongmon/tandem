@@ -109,6 +109,15 @@ struct TandemCommands: Commands {
                     .keyboardShortcut("s", modifiers: [.command, .shift])
                     .disabled(!model.studio.isRegionToolOn && !model.studio.canCapture)
                 Divider()
+                Button(model.studio.glance.isToolOn ? "Close Glance Controls" : "Glance Controls…") { model.studio.toggleGlanceTool() }
+                    .keyboardShortcut("g", modifiers: [.command, .shift])
+                    .disabled(!model.studio.glance.isToolOn && !model.studio.isConnected)
+                Button("Show Latest Answer in Glance") { model.studio.glance.showLatestAnswer() }
+                    .keyboardShortcut("g", modifiers: [.command, .option])
+                    .disabled(!model.studio.isConnected)
+                Button(model.studio.glance.layout.isVisible ? "Hide Glance" : "Show Glance") { model.studio.glance.toggleVisible() }
+                    .disabled(!model.studio.glance.hasContent)
+                Divider()
                 Button(model.settings.autoCaptureEnabled ? "Turn Off Auto-Capture" : "Turn On Auto-Capture") {
                     model.studio.toggleAutoCapture()
                 }
@@ -143,6 +152,8 @@ struct TandemCommands: Commands {
                 Divider()
                 Button(model.source.isSharingEnabled ? "Pause Sharing" : "Resume Sharing") { model.source.toggleSharing() }
                     .keyboardShortcut("p", modifiers: [.command, .shift])
+                Button(model.source.glance.isHiddenHere ? "Show Glance" : "Hide Glance") { model.source.glance.toggleHiddenHere() }
+                    .disabled(!model.source.glance.hasGlance)
             }
         }
         CommandGroup(after: .appSettings) {

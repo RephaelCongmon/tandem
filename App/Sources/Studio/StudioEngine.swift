@@ -76,6 +76,8 @@ final class StudioEngine {
 
     let chat: ChatController
     let transcription: TranscriptionService
+    /// Text in a see-through overlay on the shared Mac's screen.
+    let glance: GlanceInjector
     /// Sends this version of Tandem to an older shared Mac.
     let sharedMacUpdater: SharedMacUpdater
     @ObservationIgnored let renderer = LiveVideoRenderer()
@@ -102,6 +104,8 @@ final class StudioEngine {
         chat = ChatController(settings: settings, keys: keys, claudeCodeExecutable: claudeCodeExecutable, codexExecutable: codexExecutable)
         transcription = TranscriptionService(settings: settings, modelMirror: speechModelMirror)
         sharedMacUpdater = SharedMacUpdater(settings: settings)
+        glance = GlanceInjector(settings: settings)
+        glance.chat = chat
         chat.studio = self
         chat.transcription = transcription
         renderer.onStats = { [weak self] stats in self?.liveStats = stats }
@@ -168,12 +172,14 @@ final class StudioEngine {
         sendAutomationStatus()
         sendAudioRequest()
         connection.send(.control(.sourceCatalogRequest))
+        glance.attach(connection)
         restartAutomation()
     }
 
     func detach(_ connection: PeerConnection) {
         guard self.connection?.id == connection.id else { return }
         setRegionTool(false)
+        glance.detach(connection)
         sharedMacUpdater.sourceDisconnected(connection)
         connection.videoSink.value = nil
         connection.audioSink.value = nil
@@ -214,6 +220,8 @@ final class StudioEngine {
             remoteCatalog = catalog
         case .audioStatus(let status):
             sourceAudioStatus = status
+        case .glanceStatus(let status):
+            glance.handle(status)
         case .hello(let hello):
             if let connection { sharedMacUpdater.sourceConnected(connection, hello: hello) }
         case .updateReply, .updateStatus:
@@ -390,6 +398,14 @@ final class StudioEngine {
         chat.sendFromComposer()
     }
 
+    // MARK: Glance
+
+    /// The Glance tool: drag, resize and scroll the shared Mac's Glance on the live view.
+    func toggleGlanceTool() {
+        if !glance.isToolOn { setRegionTool(false) }
+        glance.toggleTool()
+    }
+
     // MARK: Region tool
 
     /// Select Region: turns the region tool on or off.
@@ -414,6 +430,8 @@ final class StudioEngine {
             chat.reportBanner("Update Tandem on \(sourceName ?? "the shared Mac") to select regions.")
             return
         }
+        // Both tools are drags on the live view.
+        glance.setTool(false)
         // Regions are dragged on the live view, so make sure it's showing.
         if !settings.showStage { settings.showStage = true }
         if !livePreviewEnabled { livePreviewEnabled = true }

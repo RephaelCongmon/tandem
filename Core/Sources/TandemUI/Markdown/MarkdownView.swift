@@ -14,18 +14,22 @@ public struct MarkdownStyle: Hashable, Sendable {
     public var compact: Bool
     /// Font for code blocks and inline code spans in body text.
     public var codeFont: Font
+    /// Code blocks get a Copy button (off where nothing can be clicked, like the Glance overlay).
+    public var showsCopyButtons: Bool
 
     /// Creates a style. `codeFont` defaults to the design system's mono font for the density.
     public init(
         bodyFont: Font = TandemFont.body,
         textColor: Color = Theme.textPrimary,
         compact: Bool = false,
-        codeFont: Font? = nil
+        codeFont: Font? = nil,
+        showsCopyButtons: Bool = true
     ) {
         self.bodyFont = bodyFont
         self.textColor = textColor
         self.compact = compact
         self.codeFont = codeFont ?? (compact ? TandemFont.monoSmall : TandemFont.mono)
+        self.showsCopyButtons = showsCopyButtons
     }
 
     /// Chat-thread density: 13.5 pt body.
@@ -289,14 +293,16 @@ struct CodeBlockView: View {
                     .transition(.opacity)
             }
             Spacer(minLength: Spacing.s)
-            IconButton(
-                copied ? "checkmark" : "doc.on.doc",
-                help: copied ? "Copied" : "Copy code",
-                size: metrics.copyButtonSize,
-                isActive: copied,
-                tint: Theme.success,
-                action: copy
-            )
+            if style.showsCopyButtons {
+                IconButton(
+                    copied ? "checkmark" : "doc.on.doc",
+                    help: copied ? "Copied" : "Copy code",
+                    size: metrics.copyButtonSize,
+                    isActive: copied,
+                    tint: Theme.success,
+                    action: copy
+                )
+            }
         }
         .padding(.leading, metrics.codeHorizontalPadding)
         .padding(.trailing, Spacing.xs)

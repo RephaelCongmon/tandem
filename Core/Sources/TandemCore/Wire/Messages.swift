@@ -81,6 +81,9 @@ public struct PeerHello: Codable, Sendable, Hashable {
         /// as soon as its still is captured, and skips the preview when the Studio's
         /// frozen frame is current (`SnapshotRequest.displayedFrameNanos`).
         public static let regionTool = "regionTool"
+        /// Source: shows the Studio's Glance (text in a see-through overlay on its screen,
+        /// see `GlanceContent`/`GlanceLayout`) and reports `GlanceStatus`.
+        public static let glance = "glance"
     }
 
     public var role: PeerRole
@@ -433,6 +436,12 @@ public enum ControlMessage: Codable, Sendable, Hashable {
     case selectSource(CaptureSourceID)
     case automationStatus(AutomationStatus)
     case replyMirror(ReplyMirror)
+    /// Studio → Source: the text of the Glance overlay.
+    case glanceContent(GlanceContent)
+    /// Studio → Source: where the overlay sits, its scroll position, and its look.
+    case glanceLayout(GlanceLayout)
+    /// Source → Studio: what the overlay applied and measured.
+    case glanceStatus(GlanceStatus)
     case audioRequest(AudioRequest)
     case audioStatus(AudioStatus)
     case updateOffer(UpdateOffer)

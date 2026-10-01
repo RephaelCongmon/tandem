@@ -91,6 +91,29 @@ final class HotkeyController {
             )
         case .showTandem:
             model.showMainWindow()
+        case .toggleGlance:
+            if model.settings.role == .source {
+                let glance = model.source.glance
+                guard glance.hasGlance else {
+                    model.toasts.show("No Glance from the Studio", systemImage: "sparkles")
+                    return
+                }
+                glance.toggleHiddenHere()
+            } else {
+                let glance = model.studio.glance
+                guard glance.hasContent else {
+                    model.toasts.show("Nothing in the Glance yet", systemImage: "rectangle.inset.topright.filled", style: .warning)
+                    return
+                }
+                glance.toggleVisible()
+                let name = model.studio.sourceName ?? "the shared Mac"
+                model.toasts.show(glance.layout.isVisible ? "Glance showing on \(name)" : "Glance hidden on \(name)",
+                                  systemImage: glance.layout.isVisible ? "eye" : "eye.slash")
+            }
+        case .glanceScrollUp:
+            model.studio.glance.scroll(.lineUp)
+        case .glanceScrollDown:
+            model.studio.glance.scroll(.lineDown)
         }
     }
 }

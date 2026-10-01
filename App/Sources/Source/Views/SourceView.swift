@@ -20,6 +20,7 @@ struct SourceView: View {
                     }
                     ViewersCard()
                     SendCard()
+                    GlanceCard()
                     if model.settings.showRepliesOnSource, let reply = model.source.lastReply {
                         ReplyCard(reply: reply)
                     }
@@ -417,6 +418,43 @@ private struct ReplyCard: View {
                 }
             }
         }
+    }
+}
+
+/// The Studio's Glance on this screen: what it is, and a way to hide it.
+private struct GlanceCard: View {
+    @Environment(AppModel.self) private var model
+
+    var body: some View {
+        let glance = model.source.glance
+        if glance.hasGlance {
+            Card(title: "Glance", trailing: glance.document.isStreaming ? AnyView(ProgressView().controlSize(.mini)) : nil) {
+                VStack(alignment: .leading, spacing: Spacing.s) {
+                    Text(caption(glance))
+                        .font(TandemFont.caption)
+                        .foregroundStyle(Theme.textSecondary)
+                        .fixedSize(horizontal: false, vertical: true)
+                    Text(glance.document.text)
+                        .font(TandemFont.caption)
+                        .lineLimit(3)
+                        .foregroundStyle(Theme.textTertiary)
+                    Button {
+                        glance.toggleHiddenHere()
+                    } label: {
+                        Label(glance.isHiddenHere ? "Show Glance" : "Hide Glance", systemImage: glance.isHiddenHere ? "eye" : "eye.slash")
+                    }
+                    .buttonStyle(TandemButtonStyle(.secondary, size: .small))
+                    .help(model.settings.combo(for: .toggleGlance).map { "\($0.displayString) from any app" } ?? "")
+                }
+            }
+        }
+    }
+
+    private func caption(_ glance: GlanceOverlayController) -> String {
+        let from = glance.senderName ?? "The Studio"
+        if glance.isHiddenHere { return "\(from) sent a Glance. It's hidden until you show it again." }
+        if glance.isOnScreen { return "\(from) is showing a Glance on this screen. Only you can see it: it's never in what this Mac shares." }
+        return "\(from) hid its Glance."
     }
 }
 

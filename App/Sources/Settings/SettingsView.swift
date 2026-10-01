@@ -129,6 +129,16 @@ private struct SharingSettings: View {
                 Toggle("Ask before each session, even from paired Macs", isOn: $settings.approveEachSession)
                 Toggle("Show the AI's answers on this Mac", isOn: $settings.showRepliesOnSource)
             }
+            Section {
+                Toggle("Let the other Mac show text on this screen (Glance)", isOn: $settings.allowGlance)
+                    .onChange(of: settings.allowGlance) { _, _ in model.source.glance.allowedChanged() }
+            } header: {
+                Text("Glance")
+            } footer: {
+                Text("The Studio can put a note or an AI answer in a see-through panel on this screen, and move and scroll it from there. Clicks pass through it, and it never appears in what this Mac shares. \(model.settings.combo(for: .toggleGlance)?.displayString ?? "The menu bar") hides it.")
+                    .font(TandemFont.caption)
+                    .foregroundStyle(Theme.textSecondary)
+            }
         }
         .formStyle(.grouped)
     }
