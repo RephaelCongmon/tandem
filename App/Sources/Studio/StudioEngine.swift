@@ -440,6 +440,13 @@ final class StudioEngine {
         isRegionToolOn = true
     }
 
+    /// Whether a drag on the live view can start now (what `beginRegionDrag` checks first).
+    var canBeginRegionDrag: Bool {
+        guard isRegionToolOn, regionDrag == nil, let connection, connection.isConnected, liveState == .live,
+              connection.peerSupportsRegionSnapshots else { return false }
+        return connection.peerSupportsRegionTool || regionCropsInFlight == 0
+    }
+
     /// The pointer went down on the live view: hold that frame and have the Source capture a
     /// native still of the same moment. Returns false when no drag can start.
     @discardableResult

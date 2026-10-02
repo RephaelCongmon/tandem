@@ -247,6 +247,14 @@ enum DebugCommands {
         case "glanceHide":
             // On the Source: what ⌃⌥G does there.
             model.source.glance.toggleHiddenHere()
+        case "stageDrag":
+            // stageDrag x1 y1 x2 y2 [hold]: a mouse drag on the live view (fractions of it, from
+            // the top left), sent to the window in-process (the real pointer doesn't move). It
+            // holds `hold` seconds before letting go, so `snap` can see the drag.
+            let values = argument.split(separator: " ").compactMap { Double($0) }
+            if values.count >= 4 {
+                StageDragSimulator.run(from: CGPoint(x: values[0], y: values[1]), to: CGPoint(x: values[2], y: values[3]), hold: values.count > 4 ? values[4] : 0)
+            }
         case "glanceAudit":
             // On the Source: `glanceAudit start`, drive the Glance from the Studio, then
             // `glanceAudit report` — proves it never took focus, activation or clicks.
@@ -293,6 +301,51 @@ enum DebugCommands {
         request.httpMethod = "POST"
         request.httpBody = data
         URLSession.shared.dataTask(with: request).resume()
+    }
+
+    /// Drags on the live view with synthetic events delivered straight to the window.
+    @MainActor
+    enum StageDragSimulator {
+        static func run(from: CGPoint, to: CGPoint, hold: Double) {
+            let log = Logger(subsystem: "com.rofel.tandem", category: "Debug")
+            guard let window = NSApp.windows.first(where: { $0.isVisible && $0.contentView.map(findVideo) != nil }),
+                  let content = window.contentView, let video = findVideo(in: content) else {
+                log.notice("TANDEM-DRAG no live view")
+                return
+            }
+            let rect = video.convert(video.bounds, to: nil)
+            func point(_ fraction: CGPoint) -> NSPoint {
+                NSPoint(x: rect.minX + rect.width * fraction.x, y: rect.maxY - rect.height * fraction.y)
+            }
+            func event(_ type: NSEvent.EventType, at location: NSPoint) -> NSEvent? {
+                NSEvent.mouseEvent(with: type, location: location, modifierFlags: [], timestamp: ProcessInfo.processInfo.systemUptime,
+                                   windowNumber: window.windowNumber, context: nil, eventNumber: 0, clickCount: 1,
+                                   pressure: type == .leftMouseUp ? 0 : 1)
+            }
+            let start = point(from)
+            let end = point(to)
+            Task { @MainActor in
+                if let down = event(.leftMouseDown, at: start) { window.sendEvent(down) }
+                for step in 1...15 {
+                    let t = Double(step) / 15
+                    let location = NSPoint(x: start.x + (end.x - start.x) * t, y: start.y + (end.y - start.y) * t)
+                    if let drag = event(.leftMouseDragged, at: location) { window.sendEvent(drag) }
+                    try? await Task.sleep(nanoseconds: 16_000_000)
+                }
+                log.notice("TANDEM-DRAG dragging (held \(hold, privacy: .public) s)")
+                try? await Task.sleep(nanoseconds: UInt64(max(0, hold) * 1_000_000_000))
+                if let up = event(.leftMouseUp, at: end) { window.sendEvent(up) }
+                log.notice("TANDEM-DRAG released")
+            }
+        }
+
+        private static func findVideo(in view: NSView) -> NSView? {
+            if view is VideoLayerView.LayerHostView { return view }
+            for subview in view.subviews {
+                if let found = findVideo(in: subview) { return found }
+            }
+            return nil
+        }
     }
 
     /// Watches for anything the Glance overlay could take from the app in use on the Source.

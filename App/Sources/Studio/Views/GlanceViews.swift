@@ -161,6 +161,7 @@ struct GlanceStageOverlay: View {
                 }
         )
         .help("Drag to move the Glance on \(model.studio.sourceName ?? "the shared Mac"); scroll over it to scroll its text")
+        .handlesWindowActivationClicks()
         .offset(x: rect.minX, y: rect.minY)
     }
 

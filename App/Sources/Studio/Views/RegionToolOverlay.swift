@@ -21,31 +21,38 @@ struct RegionToolOverlay: View {
             let frame = studio.regionDrag?.frameSize ?? CGSize(width: studio.liveStats.width, height: studio.liveStats.height)
             // Same aspect-fit placement as the live view's display layer.
             let video = MarkupSpace.aspectFitRect(for: frame, in: bounds)
+            // The overlay's own drag state, so it redraws with every move of the first drag too.
+            let isDragging = dragStart != nil
+            let selection = isDragging ? selectionRect(in: video) : nil
+            let marks = added.map(\.rect)
             ZStack(alignment: .topLeading) {
                 Color.clear
-                if let drag = studio.regionDrag {
-                    if let preview = drag.preview {
-                        // The Source's picture: its screen changed after the held frame.
-                        Image(decorative: preview, scale: 1)
-                            .resizable()
-                            .interpolation(.high)
-                            .frame(width: video.width, height: video.height)
-                            .offset(x: video.minX, y: video.minY)
+                if let preview = studio.regionDrag?.preview {
+                    // The Source's picture: its screen changed after the held frame.
+                    Image(decorative: preview, scale: 1)
+                        .resizable()
+                        .interpolation(.high)
+                        .frame(width: video.width, height: video.height)
+                        .offset(x: video.minX, y: video.minY)
+                }
+                // Always there (drawing nothing between drags), so the very first drag's outline
+                // shows too: inserting the shapes when that drag began left them undrawn.
+                Canvas { context, _ in
+                    if isDragging {
+                        // Dim the held frame (it isn't live) except what's being selected.
+                        var dim = Path()
+                        dim.addRect(video)
+                        if let selection { dim.addRect(selection) }
+                        context.fill(dim, with: .color(.black.opacity(0.35)), style: FillStyle(eoFill: true))
+                        if let selection {
+                            context.stroke(Path(selection), with: .color(.white), style: StrokeStyle(lineWidth: 1.5, dash: [5, 3]))
+                        }
                     }
-                    let selection = selectionRect(in: video)
-                    // Dim the held frame (it isn't live) except what's being selected.
-                    Path { path in
-                        path.addRect(video)
-                        if let selection { path.addRect(selection) }
-                    }
-                    .fill(Color.black.opacity(0.35), style: FillStyle(eoFill: true))
-                    if let selection {
-                        Path(selection).stroke(Color.white, style: StrokeStyle(lineWidth: 1.5, dash: [5, 3]))
+                    for mark in marks {
+                        context.stroke(Path(mark), with: .color(Theme.accent), lineWidth: 2)
                     }
                 }
-                ForEach(added) { mark in
-                    Path(mark.rect).stroke(Theme.accent, lineWidth: 2)
-                }
+                .allowsHitTesting(false)
             }
             .frame(width: bounds.width, height: bounds.height, alignment: .topLeading)
             .contentShape(Rectangle())
@@ -53,11 +60,20 @@ struct RegionToolOverlay: View {
                 .onChanged { value in
                     guard !rejected else { return }
                     if dragStart == nil {
-                        guard video.contains(value.startLocation), studio.beginRegionDrag() else {
+                        guard video.contains(value.startLocation), studio.canBeginRegionDrag else {
                             rejected = true
                             return
                         }
                         dragStart = value.startLocation
+                        // Hold the frame right after this event, not inside it: starting the drag
+                        // from the gesture's first update kept the first drag's outline from
+                        // being drawn until the pointer came up.
+                        DispatchQueue.main.async {
+                            guard dragStart != nil, !studio.beginRegionDrag() else { return }
+                            rejected = true
+                            dragStart = nil
+                            dragEnd = nil
+                        }
                     }
                     dragEnd = value.location
                 }
@@ -79,6 +95,9 @@ struct RegionToolOverlay: View {
                 }
             }
         }
+        // The first drag counts even when the window wasn't active (the tool was turned on from
+        // the menu bar, say): otherwise macOS spends that click activating the window.
+        .handlesWindowActivationClicks()
         .onDisappear { NSCursor.arrow.set() }
     }
 
@@ -100,6 +119,18 @@ struct RegionToolOverlay: View {
         Task {
             try? await Task.sleep(nanoseconds: 700_000_000)
             withAnimation(.easeOut(duration: 0.3)) { added.removeAll { $0.id == mark.id } }
+        }
+    }
+}
+
+extension View {
+    /// Gestures here also get the click that activates the window (macOS 15 and later).
+    @ViewBuilder
+    func handlesWindowActivationClicks() -> some View {
+        if #available(macOS 15.0, *) {
+            allowsWindowActivationEvents(true)
+        } else {
+            self
         }
     }
 }
