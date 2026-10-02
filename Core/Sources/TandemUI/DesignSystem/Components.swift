@@ -58,20 +58,24 @@ public struct TandemButtonStyle: ButtonStyle {
 
     let kind: Kind
     let size: Size
+    let isOn: Bool
 
-    public init(_ kind: Kind = .primary, size: Size = .regular) {
+    /// `isOn` shows a tool button as switched on (accent text, fill and border).
+    public init(_ kind: Kind = .primary, size: Size = .regular, isOn: Bool = false) {
         self.kind = kind
         self.size = size
+        self.isOn = isOn
     }
 
     public func makeBody(configuration: Configuration) -> some View {
-        StyledButton(configuration: configuration, kind: kind, size: size)
+        StyledButton(configuration: configuration, kind: kind, size: size, isOn: isOn)
     }
 
     private struct StyledButton: View {
         let configuration: Configuration
         let kind: Kind
         let size: Size
+        let isOn: Bool
         @Environment(\.isEnabled) private var isEnabled
         @State private var hovering = false
 
@@ -118,6 +122,7 @@ public struct TandemButtonStyle: ButtonStyle {
         private var cornerRadius: CGFloat { size == .large ? Radius.m : Radius.s }
 
         private var foreground: Color {
+            if isOn, kind == .secondary || kind == .ghost { return Theme.accent }
             switch kind {
             case .primary: return .white
             case .secondary: return Theme.textPrimary
@@ -128,6 +133,15 @@ public struct TandemButtonStyle: ButtonStyle {
 
         @ViewBuilder
         private var background: some View {
+            if isOn, kind == .secondary || kind == .ghost {
+                Theme.accent.opacity(hovering ? 0.22 : 0.16)
+            } else {
+                kindBackground
+            }
+        }
+
+        @ViewBuilder
+        private var kindBackground: some View {
             switch kind {
             case .primary:
                 ZStack {
@@ -146,7 +160,10 @@ public struct TandemButtonStyle: ButtonStyle {
 
         @ViewBuilder
         private var border: some View {
-            if kind == .secondary {
+            if isOn, kind == .secondary || kind == .ghost {
+                RoundedRectangle(cornerRadius: cornerRadius, style: .continuous)
+                    .strokeBorder(Theme.accent, lineWidth: 1)
+            } else if kind == .secondary {
                 RoundedRectangle(cornerRadius: cornerRadius, style: .continuous)
                     .strokeBorder(Theme.stroke, lineWidth: 1)
             }

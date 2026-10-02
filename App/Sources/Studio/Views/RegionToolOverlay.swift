@@ -79,10 +79,6 @@ struct RegionToolOverlay: View {
                 }
             }
         }
-        .overlay(alignment: .top) {
-            RegionToolBar()
-                .padding(Spacing.m)
-        }
         .onDisappear { NSCursor.arrow.set() }
     }
 
@@ -111,45 +107,4 @@ struct RegionToolOverlay: View {
 private struct AddedMark: Identifiable {
     let id = UUID()
     let rect: CGRect
-}
-
-private struct RegionToolBar: View {
-    @Environment(AppModel.self) private var model
-
-    var body: some View {
-        let studio = model.studio
-        HStack(spacing: 10) {
-            Image(systemName: "rectangle.dashed")
-                .font(.system(size: 12, weight: .semibold))
-                .foregroundStyle(Theme.accent)
-            Text(message)
-                .font(.system(size: 12, weight: .semibold))
-                .lineLimit(1)
-            if studio.regionCropsInFlight > 0 {
-                ProgressView().controlSize(.small)
-            }
-            Hairline(vertical: true).frame(height: 16)
-            Button("Whole Screen") { studio.addWholeScreen() }
-                .buttonStyle(TandemButtonStyle(.secondary, size: .small))
-                .disabled(studio.liveState != .live || studio.regionDrag != nil)
-                .help("Add the whole frame on screen now")
-            Button("Done") { studio.setRegionTool(false) }
-                .buttonStyle(TandemButtonStyle(.primary, size: .small))
-                .keyboardShortcut(.cancelAction)
-                .help("Stop selecting regions (esc or ⇧⌘S)")
-        }
-        .padding(.horizontal, 12)
-        .padding(.vertical, 7)
-        .tandemGlassCapsule(interactive: true)
-    }
-
-    private var message: String {
-        if model.studio.liveState != .live { return "Waiting for the live view…" }
-        let count = model.chat.composerAttachments.count
-        switch count {
-        case 0: return "Drag over what you want to ask about"
-        case 1: return "1 picture ready · drag to add another"
-        default: return "\(count) pictures ready · drag to add another"
-        }
-    }
 }

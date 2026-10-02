@@ -395,6 +395,8 @@ final class StudioEngine {
 
     /// Ask using deliberately selected pictures and the text already in the composer.
     func captureAndAsk() {
+        // Asking ends region selection, like picking any other tool.
+        setRegionTool(false)
         chat.sendFromComposer()
     }
 

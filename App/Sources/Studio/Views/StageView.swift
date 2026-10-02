@@ -33,6 +33,8 @@ struct StageView: View {
                 StageHUD()
                     .padding(Spacing.m)
                     .opacity(chromeVisible || model.studio.liveState != .live ? 1 : 0)
+                    // It's only information; a region can be dragged across it.
+                    .allowsHitTesting(!model.studio.isRegionToolOn)
             }
         }
         .overlay(alignment: .topTrailing) {
@@ -57,7 +59,7 @@ struct StageView: View {
             } else if showsChrome {
                 StageToolbar()
                     .padding(.bottom, Spacing.l)
-                    .opacity(chromeVisible || model.studio.liveState != .live ? 1 : 0)
+                    .opacity(chromeVisible || model.studio.liveState != .live || model.studio.isRegionToolOn ? 1 : 0)
             }
         }
         .overlay(alignment: .center) {
@@ -85,9 +87,10 @@ struct StageView: View {
         .onDisappear { model.studio.stageDisappeared() }
     }
 
-    /// HUD and toolbars; hidden while the region tool is on so the whole frame can be dragged over.
+    /// HUD and toolbars. They stay while the region tool is on: its button shows it's on, and
+    /// Ask, Glance or the button itself turn it off.
     private var showsChrome: Bool {
-        model.studio.isConnected && !model.studio.isRegionToolOn
+        model.studio.isConnected
     }
 
     private func scheduleHide() {
@@ -191,31 +194,69 @@ private struct StageHUD: View {
 private struct StageToolbar: View {
     @Environment(AppModel.self) private var model
 
+    /// The widest layout that fits the live view; labels never wrap.
     var body: some View {
+        ViewThatFits(in: .horizontal) {
+            bar(.full)
+            bar(.compact)
+            bar(.tight)
+        }
+    }
+
+    private enum Fit { case full, compact, tight }
+
+    private func bar(_ fit: Fit) -> some View {
         let studio = model.studio
         let settings = model.settings
-        HStack(spacing: 4) {
+        return HStack(spacing: 4) {
             Button {
                 studio.captureAndAsk()
             } label: {
                 Label("Ask", systemImage: "sparkles")
                     .font(.system(size: 12.5, weight: .semibold))
+                    .fixedSize()
             }
             .buttonStyle(TandemButtonStyle(.primary, size: .regular))
             .disabled(!model.chat.canSendFromComposer)
             .help("Ask using your text and selected pictures (⇧⌘↩)")
 
+            let selecting = studio.isRegionToolOn
             Button { studio.toggleRegionTool() } label: {
-                Label("Select region", systemImage: "rectangle.dashed")
+                Label(fit == .tight ? "Region" : "Select region", systemImage: studio.regionCropsInFlight > 0 ? "hourglass" : "rectangle.dashed")
                     .font(.system(size: 12.5, weight: .semibold))
+                    .fixedSize()
             }
-            .buttonStyle(TandemButtonStyle(.secondary, size: .regular))
-            .disabled(!studio.canCapture)
-            .help("Drag on the live view to add pictures of the shared screen (⇧⌘S)")
+            .buttonStyle(TandemButtonStyle(.secondary, size: .regular, isOn: selecting))
+            .disabled(!selecting && !studio.canCapture)
+            .help(selecting ? "Selecting: drag on the live view to add pictures. Click again, esc, Ask or Glance to stop (⇧⌘S)" : "Drag on the live view to add pictures of the shared screen (⇧⌘S)")
+
+            if selecting {
+                Button { studio.addWholeScreen() } label: {
+                    if fit == .full {
+                        Label("Whole Screen", systemImage: "rectangle.inset.filled")
+                            .font(.system(size: 12.5, weight: .semibold))
+                            .fixedSize()
+                    } else {
+                        Image(systemName: "rectangle.inset.filled")
+                            .font(.system(size: 12.5, weight: .semibold))
+                    }
+                }
+                .buttonStyle(TandemButtonStyle(.secondary, size: .regular))
+                .disabled(studio.liveState != .live || studio.regionDrag != nil)
+                .help("Add the whole frame on screen now")
+                .transition(.opacity.combined(with: .scale(scale: 0.9)))
+                // esc stops selecting.
+                Button("Stop Selecting") { studio.setRegionTool(false) }
+                    .keyboardShortcut(.cancelAction)
+                    .frame(width: 0, height: 0)
+                    .opacity(0)
+                    .accessibilityHidden(true)
+            }
 
             Button { studio.toggleGlanceTool() } label: {
                 Label("Glance", systemImage: "rectangle.inset.topright.filled")
                     .font(.system(size: 12.5, weight: .semibold))
+                    .fixedSize()
             }
             .buttonStyle(TandemButtonStyle(studio.glance.isShowingOnSource ? .primary : .secondary, size: .regular))
             .disabled(!studio.isConnected)
@@ -257,6 +298,7 @@ private struct StageToolbar: View {
         .padding(.horizontal, 8)
         .padding(.vertical, 6)
         .tandemGlassCapsule(interactive: true)
+        .animation(.easeOut(duration: 0.15), value: studio.isRegionToolOn)
     }
 }
 
