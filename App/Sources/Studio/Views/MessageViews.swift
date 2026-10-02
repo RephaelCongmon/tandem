@@ -101,6 +101,7 @@ private struct AssistantMessageView: View {
     let message: ChatMessage
     let streaming: StreamingReply?
     @State private var hovering = false
+    @State private var hideFooter: Task<Void, Never>?
     @State private var copied = false
 
     var body: some View {
@@ -127,11 +128,29 @@ private struct AssistantMessageView: View {
                 if streaming == nil {
                     footer
                         .opacity(hovering ? 1 : 0.0001)
+                        // Hidden buttons can't be clicked by accident.
+                        .allowsHitTesting(hovering)
                 }
             }
             Spacer(minLength: 24)
         }
-        .onHover { hovering = $0 }
+        // The whole row counts, gaps included, so moving from the text down to the buttons
+        // under it keeps them showing (hover used to end in the gap above them).
+        .contentShape(Rectangle())
+        .onHover { inside in
+            hideFooter?.cancel()
+            if inside {
+                hovering = true
+            } else {
+                // A moment's grace, so a quick move past the row's edge doesn't flicker them.
+                hideFooter = Task { @MainActor in
+                    try? await Task.sleep(nanoseconds: 250_000_000)
+                    guard !Task.isCancelled else { return }
+                    hovering = false
+                }
+            }
+        }
+        .onDisappear { hideFooter?.cancel() }
     }
 
     private var header: some View {
