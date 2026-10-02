@@ -192,6 +192,11 @@ Speech recognition uses [Parakeet TDT 0.6B v2](https://huggingface.co/nvidia/par
 Newest first. Each version is also published, with its download, on the repository's [Releases](https://github.com/RephaelCongmon/tandem/releases) page, and **Update Now** in the app installs it.
 
 <!-- update-log:start -->
+### 1.8.1 — October 1, 2026
+
+- **Select region is a simple toggle**: clicking it highlights the button and keeps the live view's toolbar where it is, with **Whole Screen** beside it; drag as before. Click it again, press esc, or pick **Ask** or **Glance** to stop. No more top bar with Done.
+- **The first region shows its outline**: the dashed box now follows the pointer from the first drag (it used to appear only from the second), and a drag counts even if Tandem's window wasn't active yet.
+
 ### 1.8.0 — October 1, 2026
 
 - **Paste formatted documents into Glance**: copying from Notion, Google Docs, a web page, Word, Pages or Notes keeps the headings, bold and italic, lists and to-dos, links, code, quotes and tables on the shared Mac's screen, instead of plain text. ⌥⇧⌘V pastes plain text. The Glance field now takes several lines.
